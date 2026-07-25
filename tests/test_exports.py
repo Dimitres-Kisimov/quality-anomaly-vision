@@ -30,9 +30,10 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     assert xlsx.exists() and sizes[str(xlsx)] > 4_096
 
     wb = openpyxl.load_workbook(xlsx)
-    assert set(wb.sheetnames) == {"Metrics", "PerDefectType", "Assumptions"}
+    assert set(wb.sheetnames) == {"Metrics", "PerDefectType", "Assumptions", "PerImageScores"}
     metrics = wb["Metrics"]
     assert metrics.max_row == 4, "header + one row per method"
+    assert wb["PerImageScores"].max_row == 25, "header + one row per test image"
 
     for name in ("gallery.png", "roc_pr.png", "per_type_auc.png"):
         f = figs / name

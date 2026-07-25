@@ -15,6 +15,15 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+# Load pyarrow while the process is still quiet. pandas 3.0 would otherwise
+# import it lazily at the first string-frame construction, which can hit a
+# Windows access violation late in a busy process (torch thread pools +
+# rendered figures) -- see tests/conftest.py for the full note.
+try:
+    import pyarrow  # noqa: F401
+except ImportError:
+    pass
+
 import matplotlib.pyplot as plt  # noqa: E402  (backend must be set first)
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -25,6 +34,7 @@ from qav.evaluate import (  # noqa: E402
     LOCALIZATION_IOU_HIT,
     RECOMMENDATION_RULE,
     EvalReport,
+    localization_ious,
 )
 
 # Fixed method -> hue assignment (categorical palette, validated for CVD
@@ -232,36 +242,58 @@ def _table_figure(report: EvalReport) -> plt.Figure:
     return fig
 
 
+# NOTE: every frame below is built from a dict of columns, never from a list
+# of dicts/tuples -- the row-wise pandas constructor (nested_data_to_arrays)
+# segfaulted intermittently on Python 3.14 + pandas 3.0 during development.
 def _metrics_frame(report: EvalReport) -> pd.DataFrame:
+    ms = report.methods
     return pd.DataFrame(
-        [
-            {
-                "method": m.name,
-                "complexity_rank": m.complexity_rank,
-                "roc_auc": round(m.roc_auc, 4),
-                "pr_auc": round(m.pr_auc, 4),
-                "tpr_at_5pct_fpr": round(m.tpr_at_5pct_fpr, 4),
-                "mean_iou": round(m.mean_iou, 4),
-                "hit_rate": round(m.hit_rate, 4),
-            }
-            for m in report.methods
-        ]
+        {
+            "method": [m.name for m in ms],
+            "complexity_rank": [m.complexity_rank for m in ms],
+            "roc_auc": [round(m.roc_auc, 4) for m in ms],
+            "pr_auc": [round(m.pr_auc, 4) for m in ms],
+            "tpr_at_5pct_fpr": [round(m.tpr_at_5pct_fpr, 4) for m in ms],
+            "mean_iou": [round(m.mean_iou, 4) for m in ms],
+            "hit_rate": [round(m.hit_rate, 4) for m in ms],
+        }
     )
 
 
 def _per_type_frame(report: EvalReport) -> pd.DataFrame:
-    records = []
+    pairs = [(m, kind) for m in report.methods for kind in DEFECT_KINDS]
+    return pd.DataFrame(
+        {
+            "method": [m.name for m, _ in pairs],
+            "defect_type": [kind for _, kind in pairs],
+            "roc_auc_vs_clean": [round(m.per_type_auc[kind], 4) for m, kind in pairs],
+            "mean_iou": [round(m.per_type_iou[kind], 4) for m, kind in pairs],
+        }
+    )
+
+
+def _per_image_frame(report: EvalReport) -> pd.DataFrame:
+    """One row per test image: label, type, and every method's score (plus the
+    localization IoU on defective images). Enough raw data for a reviewer to
+    re-derive the ROC curves independently."""
+    ds = report.dataset
+    defective = ds.test_labels.astype(bool)
+    frame = pd.DataFrame(
+        {
+            "image_index": np.arange(len(ds.test_images)),
+            "test_type": ds.test_types,
+            "label": ds.test_labels,
+        }
+    )
     for m in report.methods:
-        for kind in DEFECT_KINDS:
-            records.append(
-                {
-                    "method": m.name,
-                    "defect_type": kind,
-                    "roc_auc_vs_clean": round(m.per_type_auc[kind], 4),
-                    "mean_iou": round(m.per_type_iou[kind], 4),
-                }
-            )
-    return pd.DataFrame(records)
+        key = m.name.lower().replace(" ", "_")
+        frame[f"score_{key}"] = np.round(m.scores, 6)
+        iou_col = np.full(len(ds.test_images), np.nan)
+        iou_col[defective] = np.round(
+            localization_ious(m.heatmaps[defective], ds.test_masks[defective]), 4
+        )
+        frame[f"iou_{key}"] = iou_col
+    return frame
 
 
 def _assumptions_frame(report: EvalReport) -> pd.DataFrame:
@@ -288,7 +320,12 @@ def _assumptions_frame(report: EvalReport) -> pd.DataFrame:
         ("Reproducibility", "Same machine + torch build reproduces bit-identical "
          "metrics; across builds/hardware small float differences are possible."),
     ]
-    return pd.DataFrame(items, columns=["assumption", "detail"])
+    return pd.DataFrame(
+        {
+            "assumption": [name for name, _ in items],
+            "detail": [detail for _, detail in items],
+        }
+    )
 
 
 def build_deliverables(
@@ -319,6 +356,7 @@ def build_deliverables(
         _metrics_frame(report).to_excel(writer, sheet_name="Metrics", index=False)
         _per_type_frame(report).to_excel(writer, sheet_name="PerDefectType", index=False)
         _assumptions_frame(report).to_excel(writer, sheet_name="Assumptions", index=False)
+        _per_image_frame(report).to_excel(writer, sheet_name="PerImageScores", index=False)
 
     tracked = [pdf_file, xlsx_file,
                fig_path / "gallery.png", fig_path / "roc_pr.png", fig_path / "per_type_auc.png"]

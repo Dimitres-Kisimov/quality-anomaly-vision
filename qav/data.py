@@ -98,9 +98,9 @@ def _inject_scratch(
     a = center - 0.5 * length * direction
     b = center + 0.5 * length * direction
     dist = _segment_distance(size, a, b)
-    width = rng.uniform(0.55, 1.0)
+    width = rng.uniform(0.6, 1.1)
     sign = -1.0 if rng.uniform() < 0.5 else 1.0
-    amp = sign * rng.uniform(0.14, 0.30)
+    amp = sign * rng.uniform(0.18, 0.38)
     out = np.clip(image + amp * np.exp(-((dist / width) ** 2)), 0.0, 1.0)
     return out.astype(np.float32), np.abs(out - image) > MASK_DELTA_THRESHOLD
 
@@ -110,7 +110,7 @@ def _inject_blob(image: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarra
     cy, cx = rng.uniform(10.0, size - 10.0, size=2)
     sigma = rng.uniform(1.8, 3.4)
     sign = -1.0 if rng.uniform() < 0.5 else 1.0
-    amp = sign * rng.uniform(0.12, 0.26)
+    amp = sign * rng.uniform(0.16, 0.32)
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float64)
     bump = np.exp(-(((yy - cy) ** 2) + ((xx - cx) ** 2)) / (2.0 * sigma**2))
     out = np.clip(image + amp * bump, 0.0, 1.0)
@@ -130,7 +130,7 @@ def _inject_texture_break(
     size = image.shape[0]
     best: tuple[np.ndarray, np.ndarray] | None = None
     for _ in range(6):
-        half = int(rng.integers(8, 13))  # patch side 16..24 px
+        half = int(rng.integers(9, 14))  # patch side 18..26 px
         cy, cx = (int(v) for v in rng.integers(half + 2, size - half - 2, size=2))
         k = int(rng.integers(1, 4))
         shift = int(rng.integers(1, half))
