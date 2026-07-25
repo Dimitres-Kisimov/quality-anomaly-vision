@@ -187,7 +187,7 @@ def _per_type_bar_figure(report: EvalReport) -> plt.Figure:
     ax.set_ylabel("ROC-AUC vs clean", fontsize=9, color=TEXT_PRIMARY)
     ax.set_title("Which method catches which defect kind", fontsize=11, color=TEXT_PRIMARY)
     _style_axes(ax)
-    ax.legend(fontsize=8, loc="lower right", framealpha=0.9)
+    ax.legend(fontsize=8, loc="upper right", framealpha=0.9)
     fig.tight_layout()
     return fig
 
