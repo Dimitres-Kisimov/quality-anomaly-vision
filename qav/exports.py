@@ -9,6 +9,7 @@ sequential ramp so magnitude reads as light -> dark.
 from __future__ import annotations
 
 import datetime as _dt
+import textwrap
 from pathlib import Path
 
 import matplotlib
@@ -96,12 +97,15 @@ def _cover_figure(report: EvalReport) -> plt.Figure:
         f"({int(report.dataset.test_labels.sum())} defective across "
         f"{len(DEFECT_KINDS)} defect kinds)."
     )
+    headline = "\n".join(
+        textwrap.fill(line, width=72) for line in headline.splitlines()
+    )
     fig.text(0.5, 0.58, headline, ha="center", va="center", fontsize=11,
              color=TEXT_PRIMARY, linespacing=1.7,
              bbox={"boxstyle": "round,pad=1.0", "facecolor": "#f4f3f1",
                    "edgecolor": TEXT_SECONDARY})
-    fig.text(0.5, 0.30, DISCLAIMER, ha="center", va="center", fontsize=9,
-             color=TEXT_SECONDARY, linespacing=1.6, wrap=True,
+    fig.text(0.5, 0.30, textwrap.fill(DISCLAIMER, width=76), ha="center",
+             va="center", fontsize=9, color=TEXT_SECONDARY, linespacing=1.6,
              bbox={"boxstyle": "round,pad=0.8", "facecolor": "white",
                    "edgecolor": "#b3261e"})
     return fig
@@ -230,13 +234,20 @@ def _table_figure(report: EvalReport) -> plt.Figure:
     ax2.set_title("Per-defect-type breakdown", fontsize=12, color=TEXT_PRIMARY, pad=18)
 
     rec = report.recommendation
-    fig.text(0.5, 0.13,
-             f"RECOMMENDATION: {rec.method}\n\n{rec.rationale}\n\n"
-             f"Rule (fixed before the study): {RECOMMENDATION_RULE}\n"
-             f"Chance-level localization for reference: random heatmaps reach "
-             f"mean IoU {report.random_iou:.3f}.",
-             ha="center", va="center", fontsize=9, color=TEXT_PRIMARY,
-             linespacing=1.6, wrap=True,
+    box_text = "\n\n".join(
+        [
+            f"RECOMMENDATION: {rec.method}",
+            textwrap.fill(rec.rationale, width=86),
+            textwrap.fill(f"Rule (fixed before the study): {RECOMMENDATION_RULE}", width=86),
+            textwrap.fill(
+                "Chance-level localization for reference: random heatmaps reach "
+                f"mean IoU {report.random_iou:.3f}.",
+                width=86,
+            ),
+        ]
+    )
+    fig.text(0.5, 0.13, box_text, ha="center", va="center", fontsize=9,
+             color=TEXT_PRIMARY, linespacing=1.6,
              bbox={"boxstyle": "round,pad=0.9", "facecolor": "#f4f3f1",
                    "edgecolor": TEXT_SECONDARY})
     return fig
