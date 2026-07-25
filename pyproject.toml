@@ -1,0 +1,18 @@
+[project]
+name = "quality-anomaly-vision"
+version = "1.0.0"
+description = "Visual surface-defect detection for manufacturing QA: a small convolutional autoencoder measured against classical baselines on synthetic textures."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "Dimitres Kisimov" }]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,17 @@
+# Core numerics / plotting / export
+numpy
+scipy
+matplotlib
+pandas
+openpyxl
+
+# PyTorch (the CPU wheel is enough; the model is small and trains on CPU in
+# well under a minute). On a fresh machine you can install it with:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# If torch is absent, the classical baselines and their tests still work;
+# torch-dependent tests skip themselves via pytest.importorskip("torch").
+torch
+
+# Development / gates
+pytest
+ruff

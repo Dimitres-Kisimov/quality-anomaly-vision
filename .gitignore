@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Generated deliverables (rebuild with: python -m qav --deliverables)
+deliverables/
+
+# NOTE: figures/ is deliberately committed -- the README embeds those PNGs.
