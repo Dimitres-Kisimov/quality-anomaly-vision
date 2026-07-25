@@ -1,0 +1,37 @@
+# CI: lint + tests on CPU.
+#
+# Python 3.12 is used here (the project runs on 3.12+ locally I develop on
+# 3.14) because CPU torch wheels are reliably published for 3.12. The torch
+# install is best-effort on purpose: if the wheel index is unavailable, the
+# torch-dependent tests (autoencoder, deliverables) skip themselves via
+# pytest.importorskip("torch") and the classical-baseline suite still gates
+# the build.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install core dependencies
+        run: pip install numpy scipy matplotlib pandas openpyxl ruff pytest
+
+      - name: Install CPU torch (best effort)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu \
+            || echo "torch install failed; torch-dependent tests will be skipped"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests (pytest)
+        run: pytest -q
