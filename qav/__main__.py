@@ -70,6 +70,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[INFO] recommendation: {report.recommendation.method}")
     print(f"[INFO] rationale: {report.recommendation.rationale}")
 
+    from qav.economics import economics_for_report, plain_language_read
+
+    sweep = economics_for_report(report)
+    print("[INFO] inspection-threshold economics (illustrative cost rates, labelled):")
+    for line in plain_language_read(sweep).splitlines():
+        print(f"  {line}")
+
     sizes = build_deliverables(report, args.outdir, args.figdir)
     failed = False
     for path, size in sizes.items():

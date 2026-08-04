@@ -27,6 +27,9 @@ ships uninspected.
 - [A6] One station of commodity hardware (camera, lighting, small PC) costs
   **6,000 EUR** one-off.
 - [A7] Sampled defective parts are always caught (generous to the manual baseline).
+- [A8] A **false reject** (a good part the screen flags) costs **3 EUR** — the
+  manual re-inspection time plus the fraction of good parts needlessly re-scrapped
+  or reworked before being cleared. Used only by the threshold-sweep economics below.
 
 Manual baseline: 10% sampling catches at most 10% of the ~60 defective parts
 (~6/day) [A2, A3, A7]. **~54 defective parts escape per day**, ~1,890 EUR/day of
@@ -64,6 +67,28 @@ TPR at 5% FPR came out at half the synthetic value (0.20), payback under [A4]=35
 is ~16 working days. The case survives pessimistic inputs; what it cannot survive is
 skipping the pilot.
 
+## Cost-optimal operating point (threshold sweep)
+
+The ROI table above fixes the screen at a **5% false-alarm** operating point. But is
+that the *cheapest* place to run it? `qav/economics.py` answers by sweeping the
+anomaly-score threshold across the recommended method's scores and costing every
+point as `35 EUR x (escaped defects) + 3 EUR x (false rejects)` [A4, A8] at the
+1.5% prevalence [A3], reported per 1,000 parts. The measured inputs are the
+true-/false-positive rates from the synthetic benchmark; the money rates are the
+labelled illustrative constants, not guarantees.
+
+The cost-minimising threshold the code returns is **score >= 0.0217**: flag only
+**~0.45%** of parts (~4.5 per 1,000), catch **30%** of defects at **zero false
+rejects**, for **367.50 EUR/1,000** — versus 525 EUR flagging nothing and 2,955 EUR
+flagging everything. The honest finding for this conversation: at these rates the
+cost-optimal false-alarm rate is essentially **0%**, i.e. *more selective* than the
+5%-FPR point the ROI table uses. PCA cleanly separates its top ~30% of defects from
+every clean part, and beyond that high-confidence core the marginal defect costs more
+in re-inspection than it saves in escapes. Lower the escape cost or raise prevalence
+and the optimum moves toward flagging more — which is exactly the sensitivity a plant
+controller should see before committing. Full curve: `deliverables/cost_curve.csv`,
+the `Economics` sheet, and `figures/cost_curve.svg`.
+
 ## Stakeholders
 
 - **QA lead** — owner of the escape rate; defines the defect catalogue for the pilot.
@@ -78,9 +103,10 @@ skipping the pilot.
 ## Deliverable and recommended next step
 
 This repository plus its generated outputs: `deliverables/qa_defect_report.pdf`
-(executive summary with disclaimer, examples, curves, tables, recommendation) and
-`deliverables/qa_defect_metrics.xlsx` (all metrics, per-image scores, and these
-assumptions). 
+(executive summary with disclaimer, examples, curves, tables, recommendation and the
+cost curve), `deliverables/qa_defect_metrics.xlsx` (all metrics, per-image scores, the
+threshold-sweep `Economics` sheet, and these assumptions), and
+`deliverables/cost_curve.csv`. 
 
 Recommended next step: a **4-week pilot on real camera data** at one station —
 collect ~2,000 real clean images, re-fit the PCA screen, measure the true TPR/FPR

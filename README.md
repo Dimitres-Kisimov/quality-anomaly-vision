@@ -95,23 +95,60 @@ I consider that a feature of the rule, not a disappointment.
   random). Detecting "something is off in this image" and pointing at *where* are
   different problems at this defect subtlety.
 
+## What threshold should the line run? The scrap-vs-escape economics
+
+Detection quality is only half the decision. A screening station has to pick an
+**anomaly-score threshold**: flag every part at or above it for manual inspection,
+let the rest ship. Set it low and you catch more defects but scrap/re-inspect more
+good parts; set it high and you save inspection effort but let more defects escape.
+`qav/economics.py` sweeps that threshold across the recommended method's scores and
+costs out every operating point — precision/recall, **reject rate** (share of parts
+pulled for inspection = inspector workload), **escaped defects**, and an expected
+cost. The true- and false-positive rates at each threshold are *measured*; the money
+inputs are **illustrative, labelled constants** (not guarantees): an escaped defect
+costs **35 EUR** ([A4] in the business case), a false reject **3 EUR**, and the
+defect prevalence is **1.5%** ([A3]), all reported per **1,000 parts** screened.
+
+![Cost curve: scrap vs escape](figures/cost_curve.svg)
+
+For PCA reconstruction (the recommended method), the cost-minimising operating point
+computed by the code is **score >= 0.0217**: flag ~**4.5 parts per 1,000** (reject rate
+**0.45%**), catch **30% of the defects** (4.5 of ~15/1,000, so ~10.5 still escape), at
+**zero false rejects** (precision 100% *at this prevalence*), for an expected
+**367.50 EUR/1,000** — against **525 EUR** if you flag nothing (every defect escapes)
+and **2,955 EUR** if you flag everything (the line drowns in re-inspection). The
+numbers are emitted to `deliverables/cost_curve.csv` (one row per operating point) and
+the workbook's `Economics` sheet.
+
+The honest read: at a realistic 1.5% prevalence with these rates, the model earns its
+keep as a **highly selective** screen. PCA separates its top ~30% of defects cleanly
+from *every* clean part, so flagging just that high-confidence core removes ~30% of
+escape cost at no false-alarm burden; pulling more parts isn't worth it, because the
+next defects down cost more in false rejects than they save. Note this is *more*
+selective than the fixed 5%-false-alarm operating point used in the ROI table of
+[docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md) — at these cost rates the cost-optimal
+false-alarm rate is essentially 0%. Change the three constants (one edit in
+`qav/economics.py`) and the recommended threshold moves; surfacing that sensitivity is
+the point.
+
 ## How to run it
 
 ```
 pip install -r requirements.txt
-python -m qav --deliverables     # full study: ~1 minute on CPU
-python -m pytest                 # 15 tests, ~7 s
+python -m qav --deliverables     # full study + cost curve: ~1 minute on CPU
+python -m pytest                 # 19 tests, ~13 s
 python -m ruff check .
 ```
 
-`--deliverables` writes `deliverables/qa_defect_report.pdf` (5-page executive report
-with disclaimer, gallery, curves, tables, recommendation), 
-`deliverables/qa_defect_metrics.xlsx` (Metrics / PerDefectType / Assumptions /
-PerImageScores — the last one has every raw score so the ROC curves can be re-derived
-independently), and the three PNGs in `figures/`. Torch is only needed for the
-autoencoder; without it, the classical baselines and their tests still run
-(`pytest.importorskip` handles the skip). The business framing lives in
-[docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
+`--deliverables` writes `deliverables/qa_defect_report.pdf` (6-page executive report
+with disclaimer, gallery, curves, tables, recommendation and the cost curve),
+`deliverables/qa_defect_metrics.xlsx` (Metrics / PerDefectType / Economics /
+Assumptions / PerImageScores — PerImageScores has every raw score so the ROC curves
+can be re-derived independently), `deliverables/cost_curve.csv` plus the hand-drawn
+`figures/cost_curve.svg`, and the three PNGs in `figures/`. Torch is only needed for
+the autoencoder; without it, the classical baselines, the economics layer and their
+tests still run (`pytest.importorskip` handles the skip). The business framing lives
+in [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
 
 ## Limitations, stated plainly
 

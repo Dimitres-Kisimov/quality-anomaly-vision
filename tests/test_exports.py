@@ -30,10 +30,26 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     assert xlsx.exists() and sizes[str(xlsx)] > 4_096
 
     wb = openpyxl.load_workbook(xlsx)
-    assert set(wb.sheetnames) == {"Metrics", "PerDefectType", "Assumptions", "PerImageScores"}
+    assert set(wb.sheetnames) == {
+        "Metrics", "PerDefectType", "Economics", "Assumptions", "PerImageScores"
+    }
     metrics = wb["Metrics"]
     assert metrics.max_row == 4, "header + one row per method"
     assert wb["PerImageScores"].max_row == 25, "header + one row per test image"
+    econ = wb["Economics"]
+    assert econ.max_row >= 4, "header + one row per operating point"
+    assert econ["A1"].value == "threshold" and econ["M1"].value == "is_recommended"
+    # Exactly one operating point is flagged as recommended.
+    flags = [econ.cell(row=r, column=13).value for r in range(2, econ.max_row + 1)]
+    assert sum(int(v) for v in flags) == 1
+
+    # The byte-identical cost-curve deliverables the README references.
+    csv_file = out / "cost_curve.csv"
+    svg_file = figs / "cost_curve.svg"
+    assert csv_file.exists() and sizes[str(csv_file)] > 0
+    assert svg_file.exists() and sizes[str(svg_file)] > 0
+    assert csv_file.read_text(encoding="utf-8").startswith("threshold,reject_rate,")
+    assert svg_file.read_text(encoding="utf-8").startswith("<svg")
 
     for name in ("gallery.png", "roc_pr.png", "per_type_auc.png"):
         f = figs / name

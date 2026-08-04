@@ -31,6 +31,13 @@ import pandas as pd  # noqa: E402
 from matplotlib.backends.backend_pdf import PdfPages  # noqa: E402
 
 from qav.data import DEFECT_KINDS  # noqa: E402
+from qav.economics import (  # noqa: E402
+    CostSweep,
+    economics_for_report,
+    plain_language_read,
+    write_cost_curve_csv,
+    write_cost_curve_svg,
+)
 from qav.evaluate import (  # noqa: E402
     LOCALIZATION_IOU_HIT,
     RECOMMENDATION_RULE,
@@ -253,6 +260,52 @@ def _table_figure(report: EvalReport) -> plt.Figure:
     return fig
 
 
+def _economics_figure(sweep: CostSweep) -> plt.Figure:
+    """Cost curve for the PDF: total / escape / scrap vs reject rate, optimum marked."""
+    fig = plt.figure(figsize=(8.27, 11.69))
+    ax = fig.add_axes((0.12, 0.55, 0.80, 0.34))
+    pts = sweep.points
+    x = [p.reject_rate for p in pts]
+    ax.plot(x, [p.escape_cost for p in pts], color=METHOD_COLORS["Local statistics"],
+            linewidth=1.6, linestyle="--", label="escaped-defect cost")
+    ax.plot(x, [p.false_reject_cost for p in pts], color=METHOD_COLORS["PCA reconstruction"],
+            linewidth=1.6, linestyle=":", label="false-reject / scrap cost")
+    ax.plot(x, [p.expected_cost for p in pts], color="#b3261e", linewidth=2.4,
+            label="total expected cost")
+    b = sweep.best
+    ax.axvline(b.reject_rate, color="#b3261e", linewidth=1, linestyle="--")
+    ax.plot([b.reject_rate], [b.expected_cost], "o", color="#b3261e", markersize=7)
+    ax.annotate(f"recommended\n{b.reject_rate:.1%} rejected\n{b.expected_cost:,.0f} EUR",
+                xy=(b.reject_rate, b.expected_cost), xytext=(12, 14),
+                textcoords="offset points", fontsize=8.5, color="#b3261e", weight="bold")
+    m = sweep.model
+    ax.set_xlabel("Reject rate (share of parts pulled for manual inspection)",
+                  fontsize=9, color=TEXT_PRIMARY)
+    ax.set_ylabel(f"Expected cost (EUR per {m.units_basis:,} parts)", fontsize=9,
+                  color=TEXT_PRIMARY)
+    ax.set_title(f"Inspection-threshold economics: scrap vs escape ({sweep.method})",
+                 fontsize=12, color=TEXT_PRIMARY)
+    _style_axes(ax)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(bottom=0)
+    ax.legend(fontsize=8, loc="upper center", framealpha=0.9)
+
+    caption = "\n\n".join(
+        [
+            plain_language_read(sweep),
+            "Cost rates and defect prevalence above are ILLUSTRATIVE, labelled constants "
+            "(see docs/BUSINESS_CASE.md), not guarantees; the true-/false-positive rates at "
+            "every threshold are measured from the synthetic test set.",
+        ]
+    )
+    caption = "\n".join(textwrap.fill(line, width=92) for line in caption.splitlines())
+    fig.text(0.5, 0.27, caption, ha="center", va="center", fontsize=8.4,
+             color=TEXT_PRIMARY, linespacing=1.5,
+             bbox={"boxstyle": "round,pad=0.9", "facecolor": "#f4f3f1",
+                   "edgecolor": TEXT_SECONDARY})
+    return fig
+
+
 # NOTE: every frame below is built from a dict of columns, never from a list
 # of dicts/tuples -- the row-wise pandas constructor (nested_data_to_arrays)
 # segfaulted intermittently on Python 3.14 + pandas 3.0 during development.
@@ -279,6 +332,28 @@ def _per_type_frame(report: EvalReport) -> pd.DataFrame:
             "defect_type": [kind for _, kind in pairs],
             "roc_auc_vs_clean": [round(m.per_type_auc[kind], 4) for m, kind in pairs],
             "mean_iou": [round(m.per_type_iou[kind], 4) for m, kind in pairs],
+        }
+    )
+
+
+def _economics_frame(sweep: CostSweep) -> pd.DataFrame:
+    """The threshold sweep as a sheet: one row per operating point (columns dict)."""
+    pts = sweep.points
+    return pd.DataFrame(
+        {
+            "threshold": [round(p.threshold, 6) for p in pts],
+            "reject_rate": [round(p.reject_rate, 6) for p in pts],
+            "precision_at_prevalence": [round(p.precision, 6) for p in pts],
+            "recall": [round(p.tpr, 6) for p in pts],
+            "fpr": [round(p.fpr, 6) for p in pts],
+            "flagged_per_basis": [round(p.flagged, 3) for p in pts],
+            "caught_defects_per_basis": [round(p.caught_defects, 3) for p in pts],
+            "missed_defects_per_basis": [round(p.missed_defects, 3) for p in pts],
+            "false_rejects_per_basis": [round(p.false_rejects, 3) for p in pts],
+            "escape_cost_eur": [round(p.escape_cost, 2) for p in pts],
+            "false_reject_cost_eur": [round(p.false_reject_cost, 2) for p in pts],
+            "expected_cost_eur": [round(p.expected_cost, 2) for p in pts],
+            "is_recommended": [1 if p is sweep.best else 0 for p in pts],
         }
     )
 
@@ -325,6 +400,11 @@ def _assumptions_frame(report: EvalReport) -> pd.DataFrame:
          f"ground-truth mask; hit = IoU >= {LOCALIZATION_IOU_HIT:.2f}. Random "
          f"heatmaps reach mean IoU {report.random_iou:.4f}."),
         ("Recommendation rule", RECOMMENDATION_RULE),
+        ("Cost economics (illustrative)", "Threshold sweep on the recommended method's "
+         "anomaly scores costs the scrap-vs-escape tradeoff. ILLUSTRATIVE, labelled rates "
+         "(not guarantees): escaped defect 35 EUR [A4], false reject 3 EUR, defect prevalence "
+         "1.5% [A3]; reported per 1,000 parts. TPR/FPR at each threshold are measured; the "
+         "cost-minimising threshold is in the Economics sheet / cost_curve.csv."),
         ("Autoencoder", f"~{report.ae_history.get('param_count', 'n/a')} parameters, "
          f"{len(report.ae_history.get('epoch_losses', []))} epochs, CPU, seeded "
          "(torch.manual_seed + deterministic algorithms requested with warn_only)."),
@@ -350,25 +430,35 @@ def build_deliverables(
     out_path.mkdir(parents=True, exist_ok=True)
     fig_path.mkdir(parents=True, exist_ok=True)
 
+    sweep = economics_for_report(report)
+
     pdf_file = out_path / "qa_defect_report.pdf"
     gallery = _gallery_figure(report)
     curves = _curves_figure(report)
     bars = _per_type_bar_figure(report)
     with PdfPages(pdf_file) as pdf:
-        for fig in (_cover_figure(report), gallery, curves, bars, _table_figure(report)):
+        for fig in (_cover_figure(report), gallery, curves, bars,
+                    _table_figure(report), _economics_figure(sweep)):
             pdf.savefig(fig)
     gallery.savefig(fig_path / "gallery.png", dpi=150, facecolor="white")
     curves.savefig(fig_path / "roc_pr.png", dpi=150, facecolor="white")
     bars.savefig(fig_path / "per_type_auc.png", dpi=150, facecolor="white")
     plt.close("all")
 
+    # Byte-identical, dependency-light cost-curve outputs (README references the SVG).
+    csv_file = out_path / "cost_curve.csv"
+    svg_file = fig_path / "cost_curve.svg"
+    write_cost_curve_csv(sweep, csv_file)
+    write_cost_curve_svg(sweep, svg_file)
+
     xlsx_file = out_path / "qa_defect_metrics.xlsx"
     with pd.ExcelWriter(xlsx_file, engine="openpyxl") as writer:
         _metrics_frame(report).to_excel(writer, sheet_name="Metrics", index=False)
         _per_type_frame(report).to_excel(writer, sheet_name="PerDefectType", index=False)
+        _economics_frame(sweep).to_excel(writer, sheet_name="Economics", index=False)
         _assumptions_frame(report).to_excel(writer, sheet_name="Assumptions", index=False)
         _per_image_frame(report).to_excel(writer, sheet_name="PerImageScores", index=False)
 
-    tracked = [pdf_file, xlsx_file,
+    tracked = [pdf_file, xlsx_file, csv_file, svg_file,
                fig_path / "gallery.png", fig_path / "roc_pr.png", fig_path / "per_type_auc.png"]
     return {str(p): p.stat().st_size for p in tracked}
