@@ -179,6 +179,9 @@ class EvalReport:
     recommendation: Recommendation
     random_iou: float
     ae_history: dict = field(default_factory=dict)
+    # name -> fitted detector, retained so downstream analyses (e.g. the
+    # robustness stress-test) can re-score perturbed images without re-fitting.
+    detectors: dict = field(default_factory=dict)
 
 
 def evaluate_method(
@@ -259,18 +262,21 @@ def run_full_evaluation(
     dataset = make_dataset(data_config or DataConfig())
 
     results: list[MethodResult] = []
+    detectors: dict = {}
 
     local = LocalStatsDetector().fit(dataset.train)
     hm = local.heatmaps(dataset.test_images)
     results.append(
         evaluate_method("Local statistics", 1, hm, heatmap_image_scores(hm), dataset)
     )
+    detectors["Local statistics"] = local
 
     pca = PCAReconstruction(n_components=32).fit(dataset.train)
     hm = pca.heatmaps(dataset.test_images)
     results.append(
         evaluate_method("PCA reconstruction", 2, hm, heatmap_image_scores(hm), dataset)
     )
+    detectors["PCA reconstruction"] = pca
 
     ae_history: dict = {}
     if include_autoencoder:
@@ -282,6 +288,7 @@ def run_full_evaluation(
             evaluate_method("Conv autoencoder", 3, hm, heatmap_image_scores(hm), dataset)
         )
         ae_history = ae.history
+        detectors["Conv autoencoder"] = ae
 
     defective = dataset.test_labels.astype(bool)
     return EvalReport(
@@ -290,4 +297,5 @@ def run_full_evaluation(
         recommendation=pick_recommendation(results),
         random_iou=random_localization_iou(dataset.test_masks[defective]),
         ae_history=ae_history,
+        detectors=detectors,
     )

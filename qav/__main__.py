@@ -77,6 +77,14 @@ def main(argv: list[str] | None = None) -> int:
     for line in plain_language_read(sweep).splitlines():
         print(f"  {line}")
 
+    from qav.robustness import plain_language_read as robustness_read
+    from qav.robustness import robustness_for_report
+
+    robust = robustness_for_report(report)
+    print("[INFO] robustness stress-test (perturbed test images, detectors not re-fit):")
+    for line in robustness_read(robust).splitlines():
+        print(f"  {line}")
+
     sizes = build_deliverables(report, args.outdir, args.figdir)
     failed = False
     for path, size in sizes.items():

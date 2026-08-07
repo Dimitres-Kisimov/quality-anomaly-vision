@@ -44,6 +44,11 @@ from qav.evaluate import (  # noqa: E402
     EvalReport,
     localization_ious,
 )
+from qav.robustness import (  # noqa: E402
+    RobustnessReport,
+    robustness_for_report,
+    write_robustness_csv,
+)
 
 # Fixed method -> hue assignment (categorical palette, validated for CVD
 # separation; the magenta slot is low-contrast on white, so every figure that
@@ -306,6 +311,74 @@ def _economics_figure(sweep: CostSweep) -> plt.Figure:
     return fig
 
 
+_PERTURBATION_TITLES = {
+    "gaussian_noise": "Sensor noise",
+    "brightness": "Illumination shift",
+    "blur": "Defocus blur",
+    "contrast": "Contrast loss",
+}
+_PERTURBATION_XLABELS = {
+    "gaussian_noise": "additive noise std (higher = worse)",
+    "brightness": "brightness added (higher = worse)",
+    "blur": "Gaussian sigma, px (higher = worse)",
+    "contrast": "contrast gain (lower = more washout)",
+}
+
+
+def _robustness_figure(robust: RobustnessReport) -> plt.Figure:
+    """PR-AUC vs corruption severity, one small-multiple per perturbation.
+
+    Each method is a colored line; its clean-test PR-AUC is a dashed horizontal
+    reference in the same hue, so the vertical gap reads directly as the drop.
+    """
+    kinds = list(robust.perturbations)
+    fig, axes = plt.subplots(2, 2, figsize=(8.27, 9.2))
+    axes = axes.ravel()
+    methods = list(robust.baselines)
+    for ax, kind in zip(axes, kinds, strict=False):
+        severities = list(robust.perturbations[kind])
+        for name in methods:
+            color = _method_color(name)
+            ys = [
+                next(
+                    p.pr_auc
+                    for p in robust.points
+                    if p.method == name and p.perturbation == kind and p.severity == sev
+                )
+                for sev in severities
+            ]
+            ax.plot(severities, ys, marker="o", markersize=4, linewidth=1.8,
+                    color=color, label=name)
+            ax.axhline(robust.baselines[name].pr_auc, color=color, linewidth=1,
+                       linestyle="--", alpha=0.55)
+        ax.set_title(_PERTURBATION_TITLES.get(kind, kind), fontsize=10.5, color=TEXT_PRIMARY)
+        ax.set_xlabel(_PERTURBATION_XLABELS.get(kind, "severity"), fontsize=8,
+                      color=TEXT_SECONDARY)
+        ax.set_ylabel("PR-AUC", fontsize=8, color=TEXT_SECONDARY)
+        _style_axes(ax)
+        ax.set_ylim(0.45, 0.9)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=len(methods), fontsize=8.5,
+               framealpha=0.9, bbox_to_anchor=(0.5, 0.995))
+    fig.suptitle("Robustness: PR-AUC under camera-realistic corruptions",
+                 fontsize=12.5, color=TEXT_PRIMARY, weight="bold", y=0.95)
+    fig.text(0.5, 0.915, "Detectors fit once on clean images, then re-scored on corrupted "
+             "test images (no re-fitting). Dashed = clean-test PR-AUC baseline.",
+             ha="center", fontsize=8.5, color=TEXT_SECONDARY)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.9))
+
+    note = (
+        "Reading: the vertical gap from each method's dashed baseline is its PR-AUC drop under "
+        "that corruption. Full per-severity deltas (ROC-AUC / PR-AUC / TPR@5%FPR) are in the "
+        "Robustness sheet and robustness.csv. Synthetic corruptions -- relative fragility "
+        "signals, not production guarantees."
+    )
+    note = "\n".join(textwrap.fill(line, width=118) for line in note.splitlines())
+    fig.text(0.5, 0.04, note, ha="center", va="center", fontsize=8,
+             color=TEXT_SECONDARY, linespacing=1.45)
+    return fig
+
+
 # NOTE: every frame below is built from a dict of columns, never from a list
 # of dicts/tuples -- the row-wise pandas constructor (nested_data_to_arrays)
 # segfaulted intermittently on Python 3.14 + pandas 3.0 during development.
@@ -358,6 +431,31 @@ def _economics_frame(sweep: CostSweep) -> pd.DataFrame:
     )
 
 
+def _robustness_frame(robust: RobustnessReport) -> pd.DataFrame:
+    """The robustness sweep as a sheet: baseline rows (perturbation ``none``)
+    first, then one row per (method, perturbation, severity) with deltas."""
+    # (method, perturbation, severity, roc, pr, tpr, d_roc, d_pr, d_tpr)
+    records: list[tuple] = [
+        (name, "none", 0.0, base.roc_auc, base.pr_auc, base.tpr_at_5pct_fpr, 0.0, 0.0, 0.0)
+        for name, base in robust.baselines.items()
+    ]
+    records += [
+        (p.method, p.perturbation, p.severity, p.roc_auc, p.pr_auc, p.tpr_at_5pct_fpr,
+         p.d_roc_auc, p.d_pr_auc, p.d_tpr_at_5pct_fpr)
+        for p in robust.points
+    ]
+    columns = ["method", "perturbation", "severity", "roc_auc", "pr_auc",
+               "tpr_at_5pct_fpr", "d_roc_auc", "d_pr_auc", "d_tpr_at_5pct_fpr"]
+    numeric = {c: i for i, c in enumerate(columns) if i >= 2}
+    return pd.DataFrame(
+        {
+            c: [r[i] for r in records] if c not in numeric
+            else [round(float(r[i]), 4) for r in records]
+            for i, c in enumerate(columns)
+        }
+    )
+
+
 def _per_image_frame(report: EvalReport) -> pd.DataFrame:
     """One row per test image: label, type, and every method's score (plus the
     localization IoU on defective images). Enough raw data for a reviewer to
@@ -405,6 +503,12 @@ def _assumptions_frame(report: EvalReport) -> pd.DataFrame:
          "(not guarantees): escaped defect 35 EUR [A4], false reject 3 EUR, defect prevalence "
          "1.5% [A3]; reported per 1,000 parts. TPR/FPR at each threshold are measured; the "
          "cost-minimising threshold is in the Economics sheet / cost_curve.csv."),
+        ("Robustness stress-test", "Each detector is fit ONCE on clean training images, then "
+         "re-scored (never re-fit) on test images corrupted by four camera-realistic "
+         "perturbations -- gaussian_noise, brightness, blur, contrast -- each swept over three "
+         "severities. The Robustness sheet reports ROC-AUC / PR-AUC / TPR@5%FPR and their delta "
+         "vs the clean baseline. Corruptions are synthetic stand-ins for real camera faults; the "
+         "deltas are relative fragility signals, not production guarantees."),
         ("Autoencoder", f"~{report.ae_history.get('param_count', 'n/a')} parameters, "
          f"{len(report.ae_history.get('epoch_losses', []))} epochs, CPU, seeded "
          "(torch.manual_seed + deterministic algorithms requested with warn_only)."),
@@ -431,34 +535,41 @@ def build_deliverables(
     fig_path.mkdir(parents=True, exist_ok=True)
 
     sweep = economics_for_report(report)
+    robust = robustness_for_report(report)
 
     pdf_file = out_path / "qa_defect_report.pdf"
     gallery = _gallery_figure(report)
     curves = _curves_figure(report)
     bars = _per_type_bar_figure(report)
+    robustness_fig = _robustness_figure(robust)
     with PdfPages(pdf_file) as pdf:
         for fig in (_cover_figure(report), gallery, curves, bars,
-                    _table_figure(report), _economics_figure(sweep)):
+                    _table_figure(report), _economics_figure(sweep), robustness_fig):
             pdf.savefig(fig)
     gallery.savefig(fig_path / "gallery.png", dpi=150, facecolor="white")
     curves.savefig(fig_path / "roc_pr.png", dpi=150, facecolor="white")
     bars.savefig(fig_path / "per_type_auc.png", dpi=150, facecolor="white")
+    robustness_fig.savefig(fig_path / "robustness.png", dpi=150, facecolor="white")
     plt.close("all")
 
-    # Byte-identical, dependency-light cost-curve outputs (README references the SVG).
+    # Byte-identical, dependency-light cost-curve + robustness outputs.
     csv_file = out_path / "cost_curve.csv"
     svg_file = fig_path / "cost_curve.svg"
+    robustness_csv_file = out_path / "robustness.csv"
     write_cost_curve_csv(sweep, csv_file)
     write_cost_curve_svg(sweep, svg_file)
+    write_robustness_csv(robust, robustness_csv_file)
 
     xlsx_file = out_path / "qa_defect_metrics.xlsx"
     with pd.ExcelWriter(xlsx_file, engine="openpyxl") as writer:
         _metrics_frame(report).to_excel(writer, sheet_name="Metrics", index=False)
         _per_type_frame(report).to_excel(writer, sheet_name="PerDefectType", index=False)
         _economics_frame(sweep).to_excel(writer, sheet_name="Economics", index=False)
+        _robustness_frame(robust).to_excel(writer, sheet_name="Robustness", index=False)
         _assumptions_frame(report).to_excel(writer, sheet_name="Assumptions", index=False)
         _per_image_frame(report).to_excel(writer, sheet_name="PerImageScores", index=False)
 
-    tracked = [pdf_file, xlsx_file, csv_file, svg_file,
-               fig_path / "gallery.png", fig_path / "roc_pr.png", fig_path / "per_type_auc.png"]
+    tracked = [pdf_file, xlsx_file, csv_file, svg_file, robustness_csv_file,
+               fig_path / "gallery.png", fig_path / "roc_pr.png", fig_path / "per_type_auc.png",
+               fig_path / "robustness.png"]
     return {str(p): p.stat().st_size for p in tracked}

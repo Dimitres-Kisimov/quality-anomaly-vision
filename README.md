@@ -95,6 +95,52 @@ I consider that a feature of the rule, not a disappointment.
   random). Detecting "something is off in this image" and pointing at *where* are
   different problems at this defect subtlety.
 
+## Does the winner survive a dirty camera? A robustness stress-test
+
+The clean-data table above is measured on pristine 64x64 textures. A real line does
+not stay pristine: the sensor adds noise, the lighting drifts, the focus slips, the
+exposure wanders. `qav/robustness.py` measures exactly that. Each detector is fit
+**once** on the clean training images (as before), then the *test* images are
+corrupted with four camera-realistic perturbations and **re-scored with the
+already-fitted detector — no re-training, no re-fitting**. That mirrors deployment:
+a model tuned on today's clean feed meets tomorrow's degraded one. Each perturbation
+is swept over three increasing severities; the headline metric is PR-AUC (defects are
+the rare positive class), reported as the drop from each method's clean baseline.
+
+The **ΔPR-AUC at the strongest severity of each corruption** (negative = degraded):
+
+| Method | Sensor noise (std 0.10) | Illumination (+0.20) | Defocus blur (σ 1.6) | Contrast (gain 0.55) |
+|---|---|---|---|---|
+| Local statistics | -0.066 | -0.077 | **-0.185** | -0.168 |
+| PCA reconstruction | -0.071 | **-0.288** | -0.070 | **+0.001** |
+| Conv autoencoder | -0.114 | -0.175 | -0.189 | -0.025 |
+
+![Robustness: PR-AUC under camera-realistic corruptions](figures/robustness.png)
+
+The finding I did not expect, and the one that matters most for a deployment: **the
+recommended method (PCA) is the *least* robust of the three to illumination drift.**
+A global brightness shift of +0.20 costs PCA 0.288 PR-AUC (and 0.284 ROC-AUC) —
+because PCA subtracts a *fixed* clean-training mean, a DC shift it never saw makes
+every part, clean or defective, look equally anomalous, and the ranking collapses.
+Yet PCA is essentially *immune* to contrast changes (it effectively re-centers each
+image: +0.001 PR-AUC) and is the **most** blur-tolerant of the three (-0.070 vs
+-0.185/-0.189). The two detectors that key on local texture — local statistics and
+the autoencoder — collapse under defocus, which smears the very edges they rely on.
+
+This has a concrete consequence for the recommendation. On clean data PCA and the
+autoencoder tie (the pre-stated rule picks the simpler PCA). But under illumination
+drift the autoencoder is markedly steadier (ROC-AUC -0.192 vs PCA's -0.284) — so if
+the deployment camera's dominant risk is lighting rather than focus, the honest move
+is either to **normalize brightness per image before the PCA screen**, or to revisit
+the method choice. Same lesson as the texture-break finding: the "simplest good
+enough" answer depends on which failure mode actually dominates your line. The full
+per-severity grid (ROC-AUC / PR-AUC / TPR@5%FPR and deltas) is in the workbook's
+`Robustness` sheet and `deliverables/robustness.csv`.
+
+Honest scope: the corruptions are *synthetic stand-ins* for real camera faults; the
+noise sweep uses one fixed seed; perspective and geometric distortion are still
+absent. These deltas are **relative fragility signals**, not production guarantees.
+
 ## What threshold should the line run? The scrap-vs-escape economics
 
 Detection quality is only half the decision. A screening station has to pick an
@@ -135,20 +181,21 @@ the point.
 
 ```
 pip install -r requirements.txt
-python -m qav --deliverables     # full study + cost curve: ~1 minute on CPU
-python -m pytest                 # 19 tests, ~13 s
+python -m qav --deliverables     # full study + cost curve + robustness: ~1 minute on CPU
+python -m pytest                 # 29 tests, ~30 s
 python -m ruff check .
 ```
 
-`--deliverables` writes `deliverables/qa_defect_report.pdf` (6-page executive report
-with disclaimer, gallery, curves, tables, recommendation and the cost curve),
-`deliverables/qa_defect_metrics.xlsx` (Metrics / PerDefectType / Economics /
-Assumptions / PerImageScores — PerImageScores has every raw score so the ROC curves
-can be re-derived independently), `deliverables/cost_curve.csv` plus the hand-drawn
-`figures/cost_curve.svg`, and the three PNGs in `figures/`. Torch is only needed for
-the autoencoder; without it, the classical baselines, the economics layer and their
-tests still run (`pytest.importorskip` handles the skip). The business framing lives
-in [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
+`--deliverables` writes `deliverables/qa_defect_report.pdf` (7-page executive report
+with disclaimer, gallery, curves, tables, recommendation, the cost curve and the
+robustness stress-test), `deliverables/qa_defect_metrics.xlsx` (Metrics /
+PerDefectType / Economics / Robustness / Assumptions / PerImageScores —
+PerImageScores has every raw score so the ROC curves can be re-derived
+independently), `deliverables/cost_curve.csv`, `deliverables/robustness.csv` plus the
+hand-drawn `figures/cost_curve.svg`, and the four PNGs in `figures/`. Torch is only
+needed for the autoencoder; without it, the classical baselines, the economics and
+robustness layers and their tests still run (`pytest.importorskip` handles the skip).
+The business framing lives in [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
 
 ## Limitations, stated plainly
 
@@ -158,8 +205,10 @@ in [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
   real camera data.
 - **Small scale.** 600 training images, 300 test images, one seed for the headline
   numbers. This supports a method choice, not a performance guarantee.
-- **No lighting, perspective or focus variation** — the classic failure modes of real
-  vision systems are absent by construction.
+- **No perspective or geometric variation** — those classic failure modes of real
+  vision systems are absent by construction. Lighting, focus, contrast and sensor
+  noise *are* now probed synthetically by the robustness stress-test above, but only
+  as post-hoc corruptions of the synthetic textures, not real camera degradation.
 - **The autoencoder is not tuned.** No denoising objective, no SSIM loss, no capacity
   sweep. A better AE recipe might clear the 0.02 margin; on this evidence, it did not.
 - **Reproducibility:** deterministic seeds everywhere; two full runs on my machine

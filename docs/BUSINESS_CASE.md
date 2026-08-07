@@ -115,3 +115,18 @@ inputs. If texture-break-type defects dominate the real defect mix, re-run the
 method comparison: the study shows the autoencoder is the only method meaningfully
 above chance on that class (AUC 0.609 vs 0.521/0.453), and the recommendation could
 legitimately flip.
+
+**Robustness caveat for the pilot (measured, not assumed).** The repository's
+robustness stress-test (`qav/robustness.py`) re-scores each detector on corrupted
+copies of the test set without re-fitting. It shows the recommended PCA screen is the
+*most fragile of the three methods to illumination drift*: a global +0.20 brightness
+shift costs it 0.288 PR-AUC, because its fixed clean-training mean cannot absorb a
+lighting change it never saw. Two practical consequences for the pilot: (1) budget for
+**stable, controlled lighting** at the station, and/or add **per-image brightness
+normalization** ahead of the PCA screen; (2) if lighting cannot be stabilized, the
+autoencoder degrades more gracefully under illumination drift (ROC-AUC -0.192 vs
+-0.284) and may be the safer choice despite its complexity. PCA is, by contrast,
+essentially immune to contrast changes and the most tolerant to mild defocus. Full
+per-severity deltas are in the workbook's `Robustness` sheet and
+`deliverables/robustness.csv`. These are synthetic-corruption fragility signals, not
+production guarantees — one more reason the pilot measures them on real hardware.
