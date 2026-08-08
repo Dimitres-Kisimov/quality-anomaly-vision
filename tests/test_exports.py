@@ -10,6 +10,21 @@ from qav.data import DataConfig  # noqa: E402
 from qav.evaluate import run_full_evaluation  # noqa: E402
 from qav.exports import build_deliverables  # noqa: E402
 from qav.model import TrainConfig  # noqa: E402
+from qav.spc import SPCConfig  # noqa: E402
+
+# Small stream so the SPC layer stays fast even when the tiny report's
+# recommended method is the autoencoder (its scoring dominates the runtime).
+SMALL_SPC = SPCConfig(
+    subgroup_size=200,
+    phase1_subgroups=10,
+    phase2_subgroups=8,
+    change_at=3,
+    shifted_prevalence=0.10,
+    seed=101,
+    calibration_clean=40,
+    calibration_defective=30,
+    calibration_seed=99,
+)
 
 
 def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
@@ -22,7 +37,7 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
 
     out = tmp_path / "deliverables"
     figs = tmp_path / "figures"
-    sizes = build_deliverables(report, out, figs)
+    sizes = build_deliverables(report, out, figs, spc_config=SMALL_SPC)
 
     pdf = out / "qa_defect_report.pdf"
     xlsx = out / "qa_defect_metrics.xlsx"
@@ -31,7 +46,8 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
 
     wb = openpyxl.load_workbook(xlsx)
     assert set(wb.sheetnames) == {
-        "Metrics", "PerDefectType", "Economics", "Robustness", "Assumptions", "PerImageScores"
+        "Metrics", "PerDefectType", "Economics", "Robustness", "SPC",
+        "Assumptions", "PerImageScores"
     }
     metrics = wb["Metrics"]
     assert metrics.max_row == 4, "header + one row per method"
@@ -52,16 +68,32 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     ].count("none")
     assert baseline_rows == 3, "one clean-baseline row per method"
 
-    # The byte-identical cost-curve + robustness deliverables the README references.
+    # SPC sheet: header + shared Phase I block + both scenarios' Phase II rows.
+    spc = wb["SPC"]
+    assert spc["A1"].value == "scenario" and spc["T1"].value == "is_change_point"
+    expected_rows = SMALL_SPC.phase1_subgroups + 2 * SMALL_SPC.phase2_subgroups
+    assert spc.max_row == 1 + expected_rows
+    scenarios = [spc.cell(row=r, column=1).value for r in range(2, spc.max_row + 1)]
+    assert scenarios.count("baseline") == SMALL_SPC.phase1_subgroups
+    assert scenarios.count("process_shift") == SMALL_SPC.phase2_subgroups
+    assert scenarios.count("camera_drift") == SMALL_SPC.phase2_subgroups
+
+    # The byte-identical cost-curve + robustness + SPC deliverables the README references.
     csv_file = out / "cost_curve.csv"
     svg_file = figs / "cost_curve.svg"
     robustness_csv = out / "robustness.csv"
+    spc_csv_file = out / "spc_chart.csv"
+    spc_svg_file = figs / "spc_chart.svg"
     assert csv_file.exists() and sizes[str(csv_file)] > 0
     assert svg_file.exists() and sizes[str(svg_file)] > 0
     assert robustness_csv.exists() and sizes[str(robustness_csv)] > 0
+    assert spc_csv_file.exists() and sizes[str(spc_csv_file)] > 0
+    assert spc_svg_file.exists() and sizes[str(spc_svg_file)] > 0
     assert csv_file.read_text(encoding="utf-8").startswith("threshold,reject_rate,")
     assert svg_file.read_text(encoding="utf-8").startswith("<svg")
     assert robustness_csv.read_text(encoding="utf-8").startswith("method,perturbation,severity,")
+    assert spc_csv_file.read_text(encoding="utf-8").startswith("scenario,subgroup,phase,")
+    assert spc_svg_file.read_text(encoding="utf-8").startswith("<svg")
 
     for name in ("gallery.png", "roc_pr.png", "per_type_auc.png", "robustness.png"):
         f = figs / name

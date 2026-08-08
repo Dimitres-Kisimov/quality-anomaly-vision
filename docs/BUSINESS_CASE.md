@@ -30,6 +30,11 @@ ships uninspected.
 - [A8] A **false reject** (a good part the screen flags) costs **3 EUR** — the
   manual re-inspection time plus the fraction of good parts needlessly re-scrapped
   or reworked before being cleared. Used only by the threshold-sweep economics below.
+- [A9] For the monitoring layer, the production stream is **modelled** as
+  independent part-by-part draws: each part is defective with probability [A3] and
+  flagged with the per-class probability measured on synthetic calibration parts.
+  Real lines autocorrelate and batch; this assumption affects detection delays and
+  false-alarm rates, not the chart arithmetic.
 
 Manual baseline: 10% sampling catches at most 10% of the ~60 defective parts
 (~6/day) [A2, A3, A7]. **~54 defective parts escape per day**, ~1,890 EUR/day of
@@ -103,10 +108,11 @@ the `Economics` sheet, and `figures/cost_curve.svg`.
 ## Deliverable and recommended next step
 
 This repository plus its generated outputs: `deliverables/qa_defect_report.pdf`
-(executive summary with disclaimer, examples, curves, tables, recommendation and the
-cost curve), `deliverables/qa_defect_metrics.xlsx` (all metrics, per-image scores, the
-threshold-sweep `Economics` sheet, and these assumptions), and
-`deliverables/cost_curve.csv`. 
+(executive summary with disclaimer, examples, curves, tables, recommendation, the
+cost curve and the control chart), `deliverables/qa_defect_metrics.xlsx` (all
+metrics, per-image scores, the threshold-sweep `Economics` sheet, the `SPC`
+monitoring sheet, and these assumptions), `deliverables/cost_curve.csv`, and
+`deliverables/spc_chart.csv`. 
 
 Recommended next step: a **4-week pilot on real camera data** at one station —
 collect ~2,000 real clean images, re-fit the PCA screen, measure the true TPR/FPR
@@ -130,3 +136,30 @@ essentially immune to contrast changes and the most tolerant to mild defocus. Fu
 per-severity deltas are in the workbook's `Robustness` sheet and
 `deliverables/robustness.csv`. These are synthetic-corruption fragility signals, not
 production guarantees — one more reason the pilot measures them on real hardware.
+
+## Day-2 operations: keeping the screen in control (modelled)
+
+Deploying the screen creates a new, cheap process signal: the **share of parts it
+flags per shift**. `qav/spc.py` puts that signal on a standard p-chart (limits frozen
+from an in-control Phase I, Western Electric run rules) over a stream modelled from
+measured flag rates ([A1], [A3], [A9]) and demonstrates the two alarms the QA lead
+and process engineer will actually face:
+
+- **A real process shift** — defect rate creeping 1.5% → 2.5% — is caught in ~3
+  shifts by a run rule, while the plain 3σ rule misses it for the whole monitored
+  window. Every undetected shift ships ~13 extra escaped defects (~450 EUR/shift at
+  [A4]). The chart turns the screen from a part-by-part gate into an early-warning
+  system for upstream drift — at zero extra hardware.
+- **A camera fault that looks like a process shift.** A brightness drift of +0.02
+  (invisible to the eye) triples the flag rate while the true defect rate never
+  moves. The out-of-control procedure must therefore start with the **measurement
+  system** — lamp, exposure, lens — before stopping the line. This is the
+  robustness finding from the study restated as a standing work instruction.
+
+Calibration for the chart also surfaced one honest correction to the economics
+above: the cost-optimal threshold's "zero false rejects" was an artifact of the
+150-image test set's resolution. On 1,000 fresh clean parts the same threshold flags
+0.70% — the choice of operating point stands, but the "precision 100%" reading
+should not be quoted without that caveat. Detection delays and false-alarm counts
+here are one seeded, modelled run ([A9]), not measured line performance; the pilot
+should re-establish Phase I limits on real camera data.

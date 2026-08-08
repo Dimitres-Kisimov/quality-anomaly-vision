@@ -85,6 +85,14 @@ def main(argv: list[str] | None = None) -> int:
     for line in robustness_read(robust).splitlines():
         print(f"  {line}")
 
+    from qav.spc import plain_language_read as spc_read
+    from qav.spc import spc_for_report
+
+    spc = spc_for_report(report, sweep=sweep)
+    print("[INFO] SPC monitoring (p-chart + Western Electric rules, modelled stream):")
+    for line in spc_read(spc).splitlines():
+        print(f"  {line}")
+
     sizes = build_deliverables(report, args.outdir, args.figdir)
     failed = False
     for path, size in sizes.items():

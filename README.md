@@ -177,25 +177,83 @@ false-alarm rate is essentially 0%. Change the three constants (one edit in
 `qav/economics.py`) and the recommended threshold moves; surfacing that sensitivity is
 the point.
 
+## Is the line still in control? A p-chart on the screening output
+
+Everything above answers a *static* question on one test set. A running station is a
+*stream* — parts arrive shift after shift, and what the process engineer actually
+watches is the **share of parts the screen flags per subgroup**. `qav/spc.py` builds
+the textbook tool for that: a **p-chart** with control limits frozen from an
+in-control Phase I, monitored with the four classic **Western Electric run rules**
+(one point beyond 3σ; 2 of 3 beyond 2σ on one side; 4 of 5 beyond 1σ on one side;
+8 consecutive on one side of the center line).
+
+What is measured and what is modelled here — this layer is both, and the split is the
+point. The per-class flag probabilities are **measured**: a fresh calibration set
+(1,000 clean + 600 defective synthetic parts, its own seed, never seen by the study)
+is scored by the already-fitted PCA screen at the cost-optimal threshold from the
+economics section — no re-fitting anywhere. The stream itself is **modelled**: i.i.d.
+seeded draws at the labelled 1.5% prevalence [A3], in subgroups of 2,000 parts = one
+shift's production [A1]. Calibration produced its own honest finding first: **the
+"zero false rejects" of the cost-optimal threshold does not survive fresh parts.** On
+the 150 clean test images the threshold flags none; on 1,000 fresh clean parts it
+flags 7 (**0.70%**) — the test-set zero was measurement resolution, not a property of
+the threshold. (Fresh defectives: 35.7% flagged, vs 30.0% on the 150-image test set —
+same story, more resolution.)
+
+Phase I (30 modelled in-control shifts) freezes the limits: **center line 1.31%,
+UCL 2.07%** (= 41 flags per 2,000), **LCL 0.55%**. Then two things go wrong, each in
+its own Phase II scenario against those same frozen limits:
+
+![p-chart with Western Electric rules: process shift vs camera drift](figures/spc_chart.svg)
+
+- **A — the process shifts.** True defect rate steps 1.5% → 2.5% at subgroup 40. The
+  chart catches it at subgroup 43 — by **4 of 5 beyond 1σ**, a run rule. The naked 3σ
+  rule **never fires** in the entire 15-subgroup monitored window: a two-thirds rise
+  in defect rate hides inside the control band, which is exactly why the run rules
+  exist. While it ran undetected, each shift shipped ~13 extra escaped defects
+  (~450 EUR per shift at the illustrative 35 EUR [A4]).
+- **B — the camera drifts.** True defect rate **never changes**; the brightness
+  drifts 0 → +0.02 (two percent of full scale — invisible to the eye) over 15
+  subgroups, with the flag rates re-measured on the calibration set at every step of
+  the ramp. The chart alarms anyway — first by **8 on one side of CL** at subgroup
+  44, with 3σ only confirming at 50 — because a p-chart on detector output monitors
+  the *process and the measurement system together*. This is the robustness finding
+  (PCA is the method most fragile to illumination drift) surfacing exactly where a
+  plant would meet it: an out-of-control signal means **investigate** — check the
+  camera before blaming the line.
+
+Honest scope, stated plainly: the stream is a modelled stand-in (real lines
+autocorrelate; i.i.d. draws do not), the detection delays above are one seeded run of
+the chart mechanics, not an average-run-length study, and the Western Electric rules
+buy their sensitivity with more false alarms (in-control ARL ≈ 92 subgroups combined
+vs ≈ 370 for 3σ alone — on a real line, roughly one false investigation per couple of
+months at this subgroup rate). The simulation seed is fixed to a value whose Phase I
+passes its own in-control check — the premise chart practice requires before freezing
+limits — and the code counts and reports alarms wherever they occur, including before
+the injected change (this run: zero). Every subgroup, rate, limit and rule verdict is
+in `deliverables/spc_chart.csv` and the workbook's `SPC` sheet.
+
 ## How to run it
 
 ```
 pip install -r requirements.txt
-python -m qav --deliverables     # full study + cost curve + robustness: ~1 minute on CPU
-python -m pytest                 # 29 tests, ~30 s
+python -m qav --deliverables     # full study + cost curve + robustness + SPC: ~2 minutes on CPU
+python -m pytest                 # 45 tests, ~30 s
 python -m ruff check .
 ```
 
-`--deliverables` writes `deliverables/qa_defect_report.pdf` (7-page executive report
-with disclaimer, gallery, curves, tables, recommendation, the cost curve and the
-robustness stress-test), `deliverables/qa_defect_metrics.xlsx` (Metrics /
-PerDefectType / Economics / Robustness / Assumptions / PerImageScores —
-PerImageScores has every raw score so the ROC curves can be re-derived
-independently), `deliverables/cost_curve.csv`, `deliverables/robustness.csv` plus the
-hand-drawn `figures/cost_curve.svg`, and the four PNGs in `figures/`. Torch is only
-needed for the autoencoder; without it, the classical baselines, the economics and
-robustness layers and their tests still run (`pytest.importorskip` handles the skip).
-The business framing lives in [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
+`--deliverables` writes `deliverables/qa_defect_report.pdf` (8-page executive report
+with disclaimer, gallery, curves, tables, recommendation, the cost curve, the
+robustness stress-test and the control chart), `deliverables/qa_defect_metrics.xlsx`
+(Metrics / PerDefectType / Economics / Robustness / SPC / Assumptions /
+PerImageScores — PerImageScores has every raw score so the ROC curves can be
+re-derived independently), `deliverables/cost_curve.csv`,
+`deliverables/robustness.csv`, `deliverables/spc_chart.csv` plus the hand-drawn
+`figures/cost_curve.svg` and `figures/spc_chart.svg`, and the four PNGs in
+`figures/`. Torch is only needed for the autoencoder; without it, the classical
+baselines, the economics, robustness and SPC layers and their tests still run
+(`pytest.importorskip` handles the skip). The business framing lives in
+[docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
 
 ## Limitations, stated plainly
 
@@ -211,6 +269,11 @@ The business framing lives in [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
   as post-hoc corruptions of the synthetic textures, not real camera degradation.
 - **The autoencoder is not tuned.** No denoising objective, no SSIM loss, no capacity
   sweep. A better AE recipe might clear the 0.02 margin; on this evidence, it did not.
+- **The SPC stream is modelled, not measured.** Its per-class flag rates are measured
+  on synthetic calibration parts, but the part-to-part stream is i.i.d. seeded draws;
+  real production autocorrelates, drifts and batches in ways that change both the
+  false-alarm rate and the detection delay. One seeded run of the chart, not an
+  average-run-length study.
 - **Reproducibility:** deterministic seeds everywhere; two full runs on my machine
   were bit-identical. `torch.use_deterministic_algorithms(True, warn_only=True)` is
   requested, so across different torch builds or hardware, small float differences
