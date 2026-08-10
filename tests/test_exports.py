@@ -10,6 +10,7 @@ from qav.data import DataConfig  # noqa: E402
 from qav.evaluate import run_full_evaluation  # noqa: E402
 from qav.exports import build_deliverables  # noqa: E402
 from qav.model import TrainConfig  # noqa: E402
+from qav.recalibration import RecalConfig  # noqa: E402
 from qav.spc import SPCConfig  # noqa: E402
 
 # Small stream so the SPC layer stays fast even when the tiny report's
@@ -25,6 +26,9 @@ SMALL_SPC = SPCConfig(
     calibration_defective=30,
     calibration_seed=99,
 )
+# Two drift levels and a small refit window: enough to exercise every policy
+# (including an autoencoder refit when the tiny report recommends the AE).
+SMALL_RECAL = RecalConfig(drift_deltas=(0.02, 0.10), refit_clean_frames=20, refit_seed=5)
 
 
 def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
@@ -37,7 +41,8 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
 
     out = tmp_path / "deliverables"
     figs = tmp_path / "figures"
-    sizes = build_deliverables(report, out, figs, spc_config=SMALL_SPC)
+    sizes = build_deliverables(report, out, figs, spc_config=SMALL_SPC,
+                               recal_config=SMALL_RECAL)
 
     pdf = out / "qa_defect_report.pdf"
     xlsx = out / "qa_defect_metrics.xlsx"
@@ -47,7 +52,7 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     wb = openpyxl.load_workbook(xlsx)
     assert set(wb.sheetnames) == {
         "Metrics", "PerDefectType", "Economics", "Robustness", "SPC",
-        "Assumptions", "PerImageScores"
+        "Recalibration", "Assumptions", "PerImageScores"
     }
     metrics = wb["Metrics"]
     assert metrics.max_row == 4, "header + one row per method"
@@ -78,22 +83,38 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     assert scenarios.count("process_shift") == SMALL_SPC.phase2_subgroups
     assert scenarios.count("camera_drift") == SMALL_SPC.phase2_subgroups
 
-    # The byte-identical cost-curve + robustness + SPC deliverables the README references.
+    # Recalibration sheet: header + in-control anchor + 4 policies per drift level.
+    recal = wb["Recalibration"]
+    assert recal["A1"].value == "policy" and recal["L1"].value == "d_cost_eur"
+    assert recal.max_row == 1 + 1 + 4 * len(SMALL_RECAL.drift_deltas)
+    policies = [recal.cell(row=r, column=1).value for r in range(2, recal.max_row + 1)]
+    assert policies[0] == "in_control"
+    for name in ("no_action", "rate_recenter", "refit_recent", "fix_camera"):
+        assert policies.count(name) == len(SMALL_RECAL.drift_deltas)
+
+    # The byte-identical cost-curve + robustness + SPC + OCAP deliverables the
+    # README references.
     csv_file = out / "cost_curve.csv"
     svg_file = figs / "cost_curve.svg"
     robustness_csv = out / "robustness.csv"
     spc_csv_file = out / "spc_chart.csv"
     spc_svg_file = figs / "spc_chart.svg"
+    recal_csv_file = out / "recalibration.csv"
+    recal_svg_file = figs / "recalibration.svg"
     assert csv_file.exists() and sizes[str(csv_file)] > 0
     assert svg_file.exists() and sizes[str(svg_file)] > 0
     assert robustness_csv.exists() and sizes[str(robustness_csv)] > 0
     assert spc_csv_file.exists() and sizes[str(spc_csv_file)] > 0
     assert spc_svg_file.exists() and sizes[str(spc_svg_file)] > 0
+    assert recal_csv_file.exists() and sizes[str(recal_csv_file)] > 0
+    assert recal_svg_file.exists() and sizes[str(recal_svg_file)] > 0
     assert csv_file.read_text(encoding="utf-8").startswith("threshold,reject_rate,")
     assert svg_file.read_text(encoding="utf-8").startswith("<svg")
     assert robustness_csv.read_text(encoding="utf-8").startswith("method,perturbation,severity,")
     assert spc_csv_file.read_text(encoding="utf-8").startswith("scenario,subgroup,phase,")
     assert spc_svg_file.read_text(encoding="utf-8").startswith("<svg")
+    assert recal_csv_file.read_text(encoding="utf-8").startswith("policy,delta,threshold,")
+    assert recal_svg_file.read_text(encoding="utf-8").startswith("<svg")
 
     for name in ("gallery.png", "roc_pr.png", "per_type_auc.png", "robustness.png"):
         f = figs / name

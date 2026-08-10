@@ -44,6 +44,15 @@ from qav.evaluate import (  # noqa: E402
     EvalReport,
     localization_ious,
 )
+from qav.recalibration import (  # noqa: E402
+    POLICY_LABELS,
+    POLICY_ORDER,
+    RecalConfig,
+    RecalStudy,
+    recalibration_for_report,
+    write_recalibration_csv,
+    write_recalibration_svg,
+)
 from qav.robustness import (  # noqa: E402
     RobustnessReport,
     robustness_for_report,
@@ -477,6 +486,105 @@ def _spc_figure(spc: SPCStudy) -> plt.Figure:
     return fig
 
 
+# One fixed (color, linestyle) per OCAP policy -- linestyle carries the
+# identity redundantly to hue, mirroring the hand-drawn SVG's dash patterns.
+_POLICY_PLOT_STYLE = {
+    "no_action": ("#b3261e", "solid"),
+    "rate_recenter": ("#eda100", "dashed"),
+    "refit_recent": ("#008300", "dashdot"),
+    "fix_camera": ("#2a78d6", "dotted"),
+}
+
+
+def _recal_figure(recal: RecalStudy) -> plt.Figure:
+    """OCAP page for the PDF: expected cost of each drift response, plus the
+    catch-rate panel that exposes the quiet-chart trap of rate re-centering."""
+    fig = plt.figure(figsize=(8.27, 11.69))
+    ax_cost = fig.add_axes((0.12, 0.66, 0.80, 0.24))
+    ax_catch = fig.add_axes((0.12, 0.40, 0.80, 0.18))
+    deltas = [0.0, *recal.config.drift_deltas]
+    base = recal.in_control
+    m = recal.model
+    for policy in POLICY_ORDER:
+        color, style = _POLICY_PLOT_STYLE[policy]
+        outs = [recal.outcome(policy, d) for d in recal.config.drift_deltas]
+        costs = [base.expected_cost] + [o.expected_cost for o in outs]
+        caught = [base.caught_defects] + [o.caught_defects for o in outs]
+        ax_cost.plot(deltas, costs, color=color, linestyle=style, linewidth=2,
+                     marker="o", markersize=4, label=POLICY_LABELS[policy])
+        ax_catch.plot(deltas, caught, color=color, linestyle=style, linewidth=2,
+                      marker="o", markersize=4)
+    ax_cost.axhline(base.expected_cost, color=TEXT_SECONDARY, linewidth=0.9,
+                    linestyle=":", alpha=0.7)
+    ax_cost.set_ylabel(f"expected cost (EUR / {m.units_basis:,} parts)",
+                       fontsize=8.5, color=TEXT_PRIMARY)
+    ax_cost.set_title("What each response costs as the drift grows", fontsize=10,
+                      color=TEXT_PRIMARY, loc="left")
+    ax_cost.legend(fontsize=7.5, loc="upper left", framealpha=0.9)
+    ax_catch.axhline(m.units_basis * m.prevalence, color=TEXT_SECONDARY,
+                     linewidth=0.9, linestyle=":", alpha=0.7)
+    ax_catch.text(deltas[-1], m.units_basis * m.prevalence * 1.03,
+                  f"all {m.units_basis * m.prevalence:.0f} defects", ha="right",
+                  fontsize=7, color=TEXT_SECONDARY)
+    ax_catch.set_ylabel(f"defects caught / {m.units_basis:,} parts", fontsize=8.5,
+                        color=TEXT_PRIMARY)
+    ax_catch.set_xlabel("brightness drift the camera is running at", fontsize=9,
+                        color=TEXT_PRIMARY)
+    ax_catch.set_title("...and how many defects it still catches", fontsize=10,
+                       color=TEXT_PRIMARY, loc="left")
+    for ax in (ax_cost, ax_catch):
+        _style_axes(ax)
+        ax.set_xlim(0, deltas[-1] * 1.02)
+        ax.set_ylim(bottom=0)
+    fig.suptitle("The alarm fired -- now what? A measured out-of-control action plan",
+                 fontsize=13, color=TEXT_PRIMARY, weight="bold", y=0.965)
+    fig.text(0.5, 0.935, "Four responses to the camera-drift alarm, each measured on the "
+             "same fresh calibration parts at every drift level.\nNote the amber trap: "
+             "re-centering the threshold flattens the cost AND the catch rate -- the chart "
+             "goes quiet while the screen goes blind.",
+             ha="center", fontsize=8, color=TEXT_SECONDARY)
+
+    # Condensed caption -- the full per-policy grid lives in the Recalibration
+    # sheet / recalibration.csv (and recal_read() on the console).
+    d0 = recal.config.drift_deltas[0]
+    d_max = recal.config.drift_deltas[-1]
+    na0 = recal.outcome("no_action", d0)
+    na_m = recal.outcome("no_action", d_max)
+    rc_m = recal.outcome("rate_recenter", d_max)
+    rf_all = [recal.outcome("refit_recent", d) for d in recal.config.drift_deltas]
+    n_def = m.units_basis * m.prevalence
+    recovery = (
+        f", recovering {recal.cost_recovered('refit_recent', d_max):.0%} of the "
+        f"drift-induced cost at +{d_max:g}" if na_m.d_cost > 0 else ""
+    )
+    caption_lines = [
+        f"In control: {base.expected_cost:,.0f} EUR per {m.units_basis:,} parts, flagging "
+        f"{base.flag_rate:.2%} and catching {base.caught_defects:.1f} of {n_def:.1f} defects "
+        f"(ROC-AUC {base.roc_auc:.3f}; {recal.method}, threshold {recal.base_threshold:.4f}).",
+        f"Doing nothing costs {na0.expected_cost:,.0f} EUR ({na0.d_cost:+,.0f}) at the drift "
+        f"level the chart alarms at (+{d0:g}) and {na_m.expected_cost:,.0f} EUR at +{d_max:g} "
+        f"({na_m.flag_rate:.0%} of all parts flagged).",
+        f"The trap: re-centering the threshold at +{d_max:g} returns the flag rate to "
+        f"{rc_m.flag_rate:.2%} -- the chart goes quiet -- while catching {rc_m.caught_defects:.1f} "
+        f"of {n_def:.1f} defects (ROC-AUC {rc_m.roc_auc:.3f}, identical to no action: a "
+        "threshold cannot restore lost separability).",
+        f"Re-fitting on {recal.config.refit_clean_frames} recent verified-clean frames [A10] "
+        f"holds {min(o.expected_cost for o in rf_all):,.0f}-"
+        f"{max(o.expected_cost for o in rf_all):,.0f} EUR at every drift level"
+        f"{recovery}; repairing the camera restores the in-control point exactly.",
+        "Flag rates and ROC-AUC are MEASURED (fitted or re-fitted detectors on fresh "
+        "synthetic calibration parts); stream composition and cost rates are the labelled "
+        "illustrative model; refit frames are assumed clean and free [A10]. Full grid: "
+        "Recalibration sheet / recalibration.csv.",
+    ]
+    caption = "\n".join(textwrap.fill(line, width=104) for line in caption_lines)
+    fig.text(0.5, 0.20, caption, ha="center", va="center", fontsize=7.6,
+             color=TEXT_PRIMARY, linespacing=1.5,
+             bbox={"boxstyle": "round,pad=0.8", "facecolor": "#f4f3f1",
+                   "edgecolor": TEXT_SECONDARY})
+    return fig
+
+
 # NOTE: every frame below is built from a dict of columns, never from a list
 # of dicts/tuples -- the row-wise pandas constructor (nested_data_to_arrays)
 # segfaulted intermittently on Python 3.14 + pandas 3.0 during development.
@@ -589,6 +697,28 @@ def _spc_frame(spc: SPCStudy) -> pd.DataFrame:
     )
 
 
+def _recalibration_frame(recal: RecalStudy) -> pd.DataFrame:
+    """The action-plan study as a sheet: the in-control anchor row first, then
+    one row per (drift level, policy) outcome."""
+    outs = [recal.in_control, *recal.outcomes]
+    return pd.DataFrame(
+        {
+            "policy": [o.policy for o in outs],
+            "delta": [round(o.delta, 4) for o in outs],
+            "threshold": [round(o.threshold, 6) for o in outs],
+            "p_flag_clean": [round(o.p_clean, 6) for o in outs],
+            "p_flag_defective": [round(o.p_defective, 6) for o in outs],
+            "roc_auc": [round(o.roc_auc, 6) for o in outs],
+            "flag_rate": [round(o.flag_rate, 6) for o in outs],
+            "caught_defects_per_basis": [round(o.caught_defects, 3) for o in outs],
+            "missed_defects_per_basis": [round(o.missed_defects, 3) for o in outs],
+            "false_rejects_per_basis": [round(o.false_rejects, 3) for o in outs],
+            "expected_cost_eur": [round(o.expected_cost, 2) for o in outs],
+            "d_cost_eur": [round(o.d_cost, 2) for o in outs],
+        }
+    )
+
+
 def _per_image_frame(report: EvalReport) -> pd.DataFrame:
     """One row per test image: label, type, and every method's score (plus the
     localization IoU on defective images). Enough raw data for a reviewer to
@@ -652,6 +782,17 @@ def _assumptions_frame(report: EvalReport) -> pd.DataFrame:
          "camera-drift scenario changes only the imaging (brightness ramp), never the true "
          "defect rate: its alarms demonstrate that the chart confounds process and measurement "
          "system."),
+        ("Out-of-control action plan (OCAP)", "When the p-chart alarms on camera drift, four "
+         "responses are measured at every drift level on the SPC layer's calibration parts: "
+         "no_action (frozen detector + threshold), rate_recenter (threshold re-set so the "
+         "modelled unlabelled stream's flag rate returns to its in-control value -- no labels "
+         "at decision time), refit_recent (fresh same-family detector fit on recent "
+         "verified-clean frames captured under the drifted camera [A10], threshold "
+         "rate-re-centered), fix_camera (root cause repaired -- recovers the in-control point "
+         "by construction). [A10]: the refit window is assumed available and free; "
+         "verification effort and recalibration downtime are NOT costed. Costs use the same "
+         "illustrative rates as the economics layer; the drift is a synthetic brightness "
+         "stand-in. Full grid: Recalibration sheet / recalibration.csv."),
         ("Autoencoder", f"~{report.ae_history.get('param_count', 'n/a')} parameters, "
          f"{len(report.ae_history.get('epoch_losses', []))} epochs, CPU, seeded "
          "(torch.manual_seed + deterministic algorithms requested with warn_only)."),
@@ -671,6 +812,7 @@ def build_deliverables(
     out_dir: str | Path = "deliverables",
     fig_dir: str | Path = "figures",
     spc_config: SPCConfig | None = None,
+    recal_config: RecalConfig | None = None,
 ) -> dict[str, int]:
     """Write PDF + Excel + README figures; return {path: size_bytes}."""
     out_path = Path(out_dir)
@@ -681,6 +823,9 @@ def build_deliverables(
     sweep = economics_for_report(report)
     robust = robustness_for_report(report)
     spc = spc_for_report(report, sweep=sweep, config=spc_config)
+    recal = recalibration_for_report(
+        report, sweep=sweep, config=recal_config, spc_config=spc_config
+    )
 
     pdf_file = out_path / "qa_defect_report.pdf"
     gallery = _gallery_figure(report)
@@ -690,7 +835,7 @@ def build_deliverables(
     with PdfPages(pdf_file) as pdf:
         for fig in (_cover_figure(report), gallery, curves, bars,
                     _table_figure(report), _economics_figure(sweep), robustness_fig,
-                    _spc_figure(spc)):
+                    _spc_figure(spc), _recal_figure(recal)):
             pdf.savefig(fig)
     gallery.savefig(fig_path / "gallery.png", dpi=150, facecolor="white")
     curves.savefig(fig_path / "roc_pr.png", dpi=150, facecolor="white")
@@ -698,17 +843,21 @@ def build_deliverables(
     robustness_fig.savefig(fig_path / "robustness.png", dpi=150, facecolor="white")
     plt.close("all")
 
-    # Byte-identical, dependency-light cost-curve + robustness + SPC outputs.
+    # Byte-identical, dependency-light cost-curve + robustness + SPC + OCAP outputs.
     csv_file = out_path / "cost_curve.csv"
     svg_file = fig_path / "cost_curve.svg"
     robustness_csv_file = out_path / "robustness.csv"
     spc_csv_file = out_path / "spc_chart.csv"
     spc_svg_file = fig_path / "spc_chart.svg"
+    recal_csv_file = out_path / "recalibration.csv"
+    recal_svg_file = fig_path / "recalibration.svg"
     write_cost_curve_csv(sweep, csv_file)
     write_cost_curve_svg(sweep, svg_file)
     write_robustness_csv(robust, robustness_csv_file)
     write_spc_csv(spc, spc_csv_file)
     write_spc_svg(spc, spc_svg_file)
+    write_recalibration_csv(recal, recal_csv_file)
+    write_recalibration_svg(recal, recal_svg_file)
 
     xlsx_file = out_path / "qa_defect_metrics.xlsx"
     with pd.ExcelWriter(xlsx_file, engine="openpyxl") as writer:
@@ -717,11 +866,12 @@ def build_deliverables(
         _economics_frame(sweep).to_excel(writer, sheet_name="Economics", index=False)
         _robustness_frame(robust).to_excel(writer, sheet_name="Robustness", index=False)
         _spc_frame(spc).to_excel(writer, sheet_name="SPC", index=False)
+        _recalibration_frame(recal).to_excel(writer, sheet_name="Recalibration", index=False)
         _assumptions_frame(report).to_excel(writer, sheet_name="Assumptions", index=False)
         _per_image_frame(report).to_excel(writer, sheet_name="PerImageScores", index=False)
 
     tracked = [pdf_file, xlsx_file, csv_file, svg_file, robustness_csv_file,
-               spc_csv_file, spc_svg_file,
+               spc_csv_file, spc_svg_file, recal_csv_file, recal_svg_file,
                fig_path / "gallery.png", fig_path / "roc_pr.png", fig_path / "per_type_auc.png",
                fig_path / "robustness.png"]
     return {str(p): p.stat().st_size for p in tracked}

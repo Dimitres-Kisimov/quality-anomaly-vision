@@ -233,26 +233,84 @@ limits — and the code counts and reports alarms wherever they occur, including
 the injected change (this run: zero). Every subgroup, rate, limit and rule verdict is
 in `deliverables/spc_chart.csv` and the workbook's `SPC` sheet.
 
+## The alarm fired — now what? A measured out-of-control action plan
+
+The SPC section ends on an instruction: an out-of-control signal means *investigate —
+check the camera before blaming the line*. `qav/recalibration.py` measures what
+happens after the investigation confirms camera drift, because "investigate" is not
+yet an action plan. Four responses, each measured on the same fresh calibration parts
+the SPC layer uses (1,000 clean + 600 defective; detectors re-fit only where the
+policy says so), at four drift levels — **+0.02** (the level the p-chart actually
+alarmed at) plus the robustness sweep's brightness severities **0.05 / 0.10 / 0.20**
+— and each costed with the same illustrative cost model as the threshold economics.
+Expected cost in EUR per 1,000 parts (in control: **358 EUR**, catching 5.4 of the
+15 defects at a 1.22% flag rate):
+
+| Response to the drift alarm | +0.02 | +0.05 | +0.10 | +0.20 |
+|---|---|---|---|---|
+| Keep running (no action) | 433 | 1,945 | 2,955 | 2,955 |
+| Re-center the threshold on the unlabelled stream | 389 | 463 | 519 | 546 |
+| Re-fit on 200 recent verified-clean frames [A10] | **388** | **388** | **389** | **396** |
+| Repair the camera (root cause) | 358 | 358 | 358 | 358 |
+
+![Out-of-control action plan: cost of each response](figures/recalibration.svg)
+
+What the numbers say, in the order they surprised me:
+
+- **The cheap fix is a trap the chart cannot see.** Re-centering the threshold needs
+  no labels and no downtime — watch the unlabelled stream's score distribution and
+  move the cutoff until the flag rate returns to its in-control ~1.2%. It also
+  quiets the p-chart *by construction*. But its ROC-AUC is bit-identical to doing
+  nothing (same scores, different cutoff): at +0.10 the "recovered" screen catches
+  **1.1 of 15** defects, at +0.20 just **0.4** — near-random ranking (AUC 0.538)
+  behind an in-control-looking flag rate. A green chart over a blind screen is the
+  worst monitoring outcome there is; the action plan must forbid touching the
+  threshold before the measurement system has been checked.
+- **Doing nothing drowns the line, fast.** The frozen threshold meets brightened
+  images: +74 EUR/1,000 at +0.02, then 63% of *all* parts flagged at +0.05
+  (1,945 EUR), then 100% from +0.10 on — the failure mode the robustness section
+  predicted for PCA, now in EUR.
+- **Re-fitting on recent frames genuinely closes the loop.** A fresh PCA fit on 200
+  verified-clean frames captured *under the drifted camera* [A10] absorbs the DC
+  shift into its new mean — ROC-AUC returns to ~0.785 at every drift level, and
+  ~99% of the drift-induced cost is recovered at +0.05 and beyond (61% of the much
+  smaller loss at +0.02). The ~30 EUR residual gap to true in-control is the price
+  of the 3× smaller refit window. Alarm → diagnose → recalibrate → back in control.
+- **Early detection makes the cheap response viable.** At the drift level where the
+  chart first alarms (+0.02), re-centering and re-fitting are equivalent (389 vs
+  388 EUR); by +0.05 re-centering's extra cost is already 3.6× the refit's. The
+  longer a drift runs, the further the responses diverge — a measured argument for
+  the run rules' sensitivity.
+
+Honest scope: the drift is a synthetic brightness stand-in; the refit window is
+assumed available, verified clean and free [A10] — verification labour, recalibration
+downtime and the risk of refitting on frames that are *not* actually clean are all
+uncosted; and one drift mode is studied (the one PCA is most fragile to). The full
+per-policy grid (rates, AUC, costs) is in `deliverables/recalibration.csv` and the
+workbook's `Recalibration` sheet.
+
 ## How to run it
 
 ```
 pip install -r requirements.txt
-python -m qav --deliverables     # full study + cost curve + robustness + SPC: ~2 minutes on CPU
-python -m pytest                 # 45 tests, ~30 s
+python -m qav --deliverables     # full study + economics + robustness + SPC + OCAP: ~2 minutes on CPU
+python -m pytest                 # 59 tests, ~30 s
 python -m ruff check .
 ```
 
-`--deliverables` writes `deliverables/qa_defect_report.pdf` (8-page executive report
+`--deliverables` writes `deliverables/qa_defect_report.pdf` (9-page executive report
 with disclaimer, gallery, curves, tables, recommendation, the cost curve, the
-robustness stress-test and the control chart), `deliverables/qa_defect_metrics.xlsx`
-(Metrics / PerDefectType / Economics / Robustness / SPC / Assumptions /
-PerImageScores — PerImageScores has every raw score so the ROC curves can be
-re-derived independently), `deliverables/cost_curve.csv`,
-`deliverables/robustness.csv`, `deliverables/spc_chart.csv` plus the hand-drawn
-`figures/cost_curve.svg` and `figures/spc_chart.svg`, and the four PNGs in
+robustness stress-test, the control chart and the out-of-control action plan),
+`deliverables/qa_defect_metrics.xlsx`
+(Metrics / PerDefectType / Economics / Robustness / SPC / Recalibration /
+Assumptions / PerImageScores — PerImageScores has every raw score so the ROC curves
+can be re-derived independently), `deliverables/cost_curve.csv`,
+`deliverables/robustness.csv`, `deliverables/spc_chart.csv`,
+`deliverables/recalibration.csv` plus the hand-drawn `figures/cost_curve.svg`,
+`figures/spc_chart.svg` and `figures/recalibration.svg`, and the four PNGs in
 `figures/`. Torch is only needed for the autoencoder; without it, the classical
-baselines, the economics, robustness and SPC layers and their tests still run
-(`pytest.importorskip` handles the skip). The business framing lives in
+baselines, the economics, robustness, SPC and recalibration layers and their tests
+still run (`pytest.importorskip` handles the skip). The business framing lives in
 [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
 
 ## Limitations, stated plainly
@@ -274,6 +332,11 @@ baselines, the economics, robustness and SPC layers and their tests still run
   real production autocorrelates, drifts and batches in ways that change both the
   false-alarm rate and the detection delay. One seeded run of the chart, not an
   average-run-length study.
+- **The action plan's recovery numbers are responses to a synthetic drift.** One
+  drift mode (a global brightness shift — deliberately the one PCA is most fragile
+  to). The refit policy assumes 200 verified-clean recent frames arrive free and
+  promptly [A10]; verification labour, recalibration downtime and the risk of
+  refitting on contaminated frames are not modelled.
 - **Reproducibility:** deterministic seeds everywhere; two full runs on my machine
   were bit-identical. `torch.use_deterministic_algorithms(True, warn_only=True)` is
   requested, so across different torch builds or hardware, small float differences

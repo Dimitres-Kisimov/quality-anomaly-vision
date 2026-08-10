@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="470" viewBox="0 0 780 470" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect x="0" y="0" width="780" height="470" fill="white"/>
+<text x="390" y="26" text-anchor="middle" font-size="16" font-weight="bold" fill="#0b0b0b">The alarm fired -- now what? Cost of each response to camera drift</text>
+<text x="390" y="44" text-anchor="middle" font-size="10.5" fill="#52514e">PCA reconstruction on fresh calibration parts - illustrative rates: escaped defect 35 EUR, false reject 3 EUR, prevalence 1.5%, per 1,000 parts</text>
+<line x1="86.00" y1="380.00" x2="610.00" y2="380.00" stroke="#d9d8d4" stroke-width="1"/>
+<text x="78.00" y="383.50" text-anchor="end" font-size="9" fill="#52514e">0</text>
+<line x1="86.00" y1="318.40" x2="610.00" y2="318.40" stroke="#d9d8d4" stroke-width="1"/>
+<text x="78.00" y="321.90" text-anchor="end" font-size="9" fill="#52514e">1,000</text>
+<line x1="86.00" y1="256.80" x2="610.00" y2="256.80" stroke="#d9d8d4" stroke-width="1"/>
+<text x="78.00" y="260.30" text-anchor="end" font-size="9" fill="#52514e">2,000</text>
+<line x1="86.00" y1="195.20" x2="610.00" y2="195.20" stroke="#d9d8d4" stroke-width="1"/>
+<text x="78.00" y="198.70" text-anchor="end" font-size="9" fill="#52514e">3,000</text>
+<line x1="86.00" y1="133.60" x2="610.00" y2="133.60" stroke="#d9d8d4" stroke-width="1"/>
+<text x="78.00" y="137.10" text-anchor="end" font-size="9" fill="#52514e">4,000</text>
+<line x1="86.00" y1="72.00" x2="610.00" y2="72.00" stroke="#d9d8d4" stroke-width="1"/>
+<text x="78.00" y="75.50" text-anchor="end" font-size="9" fill="#52514e">5,000</text>
+<line x1="86.00" y1="380.00" x2="86.00" y2="385.00" stroke="#52514e" stroke-width="1"/>
+<text x="86.00" y="398.00" text-anchor="middle" font-size="9" fill="#52514e">+0</text>
+<line x1="138.40" y1="380.00" x2="138.40" y2="385.00" stroke="#52514e" stroke-width="1"/>
+<text x="138.40" y="398.00" text-anchor="middle" font-size="9" fill="#52514e">+0.02</text>
+<line x1="217.00" y1="380.00" x2="217.00" y2="385.00" stroke="#52514e" stroke-width="1"/>
+<text x="217.00" y="398.00" text-anchor="middle" font-size="9" fill="#52514e">+0.05</text>
+<line x1="348.00" y1="380.00" x2="348.00" y2="385.00" stroke="#52514e" stroke-width="1"/>
+<text x="348.00" y="398.00" text-anchor="middle" font-size="9" fill="#52514e">+0.1</text>
+<line x1="610.00" y1="380.00" x2="610.00" y2="385.00" stroke="#52514e" stroke-width="1"/>
+<text x="610.00" y="398.00" text-anchor="middle" font-size="9" fill="#52514e">+0.2</text>
+<line x1="86.00" y1="72.00" x2="86.00" y2="380.00" stroke="#52514e" stroke-width="1.5"/>
+<line x1="86.00" y1="380.00" x2="610.00" y2="380.00" stroke="#52514e" stroke-width="1.5"/>
+<text x="348" y="420" text-anchor="middle" font-size="11" fill="#0b0b0b">Brightness drift the camera is running at</text>
+<text x="22" y="226" text-anchor="middle" font-size="11" fill="#0b0b0b" transform="rotate(-90 22 226)">Expected cost (EUR per 1,000 parts)</text>
+<line x1="86.00" y1="357.92" x2="610.00" y2="357.92" stroke="#52514e" stroke-width="1" stroke-dasharray="1.5 3.5"/>
+<text x="90.00" y="352.92" font-size="8.5" fill="#52514e">in control: 358 EUR</text>
+<polyline fill="none" stroke="#b3261e" stroke-width="2.6" points="86.00,357.92 138.40,353.34 217.00,260.17 348.00,197.97 610.00,197.97"/>
+<circle cx="138.40" cy="353.34" r="3" fill="#b3261e" stroke="white" stroke-width="1"/>
+<circle cx="217.00" cy="260.17" r="3" fill="#b3261e" stroke="white" stroke-width="1"/>
+<circle cx="348.00" cy="197.97" r="3" fill="#b3261e" stroke="white" stroke-width="1"/>
+<circle cx="610.00" cy="197.97" r="3" fill="#b3261e" stroke="white" stroke-width="1"/>
+<polyline fill="none" stroke="#eda100" stroke-width="2.0" stroke-dasharray="6 3" points="86.00,357.92 138.40,356.07 217.00,351.50 348.00,348.03 610.00,346.39"/>
+<circle cx="138.40" cy="356.07" r="3" fill="#eda100" stroke="white" stroke-width="1"/>
+<circle cx="217.00" cy="351.50" r="3" fill="#eda100" stroke="white" stroke-width="1"/>
+<circle cx="348.00" cy="348.03" r="3" fill="#eda100" stroke="white" stroke-width="1"/>
+<circle cx="610.00" cy="346.39" r="3" fill="#eda100" stroke="white" stroke-width="1"/>
+<polyline fill="none" stroke="#008300" stroke-width="2.0" stroke-dasharray="8 3 2 3" points="86.00,357.92 138.40,356.12 217.00,356.12 348.00,356.01 610.00,355.64"/>
+<circle cx="138.40" cy="356.12" r="3" fill="#008300" stroke="white" stroke-width="1"/>
+<circle cx="217.00" cy="356.12" r="3" fill="#008300" stroke="white" stroke-width="1"/>
+<circle cx="348.00" cy="356.01" r="3" fill="#008300" stroke="white" stroke-width="1"/>
+<circle cx="610.00" cy="355.64" r="3" fill="#008300" stroke="white" stroke-width="1"/>
+<polyline fill="none" stroke="#2a78d6" stroke-width="2.0" stroke-dasharray="2 3" points="86.00,357.92 138.40,357.92 217.00,357.92 348.00,357.92 610.00,357.92"/>
+<circle cx="138.40" cy="357.92" r="3" fill="#2a78d6" stroke="white" stroke-width="1"/>
+<circle cx="217.00" cy="357.92" r="3" fill="#2a78d6" stroke="white" stroke-width="1"/>
+<circle cx="348.00" cy="357.92" r="3" fill="#2a78d6" stroke="white" stroke-width="1"/>
+<circle cx="610.00" cy="357.92" r="3" fill="#2a78d6" stroke="white" stroke-width="1"/>
+<text x="618.00" y="201.47" font-size="9" font-weight="bold" fill="#b3261e">no action: 2,955</text>
+<text x="618.00" y="349.89" font-size="9" font-weight="bold" fill="#eda100">rate recenter: 546</text>
+<text x="618.00" y="363.89" font-size="9" font-weight="bold" fill="#008300">refit recent: 396</text>
+<text x="618.00" y="377.89" font-size="9" font-weight="bold" fill="#2a78d6">fix camera: 358</text>
+<text x="390" y="448" text-anchor="middle" font-size="8.5" fill="#52514e">Measured flag rates and ROC-AUC on fresh calibration parts; costs from the labelled illustrative model. Full grid: recalibration.csv / Recalibration sheet.</text>
+<text x="390" y="462" text-anchor="middle" font-size="8.5" fill="#52514e">Re-centering the threshold quiets the control chart but cannot restore lost separability -- see the amber line's catch rate in the CSV.</text>
+</svg>

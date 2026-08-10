@@ -93,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     for line in spc_read(spc).splitlines():
         print(f"  {line}")
 
+    from qav.recalibration import plain_language_read as recal_read
+    from qav.recalibration import recalibration_for_report
+
+    recal = recalibration_for_report(report, sweep=sweep)
+    print("[INFO] out-of-control action plan (camera-drift alarm: measured recovery per policy):")
+    for line in recal_read(recal).splitlines():
+        print(f"  {line}")
+
     sizes = build_deliverables(report, args.outdir, args.figdir)
     failed = False
     for path, size in sizes.items():

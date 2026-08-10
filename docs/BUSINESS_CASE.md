@@ -35,6 +35,11 @@ ships uninspected.
   flagged with the per-class probability measured on synthetic calibration parts.
   Real lines autocorrelate and batch; this assumption affects detection delays and
   false-alarm rates, not the chart arithmetic.
+- [A10] After a camera-drift alarm, a window of **200 recent verified-clean frames**
+  (golden samples / inspector-cleared parts photographed under the drifted camera)
+  is available for detector re-fitting at zero modelled cost. Verification labour,
+  recalibration downtime and the risk that the window is contaminated are NOT
+  costed. Used only by the out-of-control action plan below.
 
 Manual baseline: 10% sampling catches at most 10% of the ~60 defective parts
 (~6/day) [A2, A3, A7]. **~54 defective parts escape per day**, ~1,890 EUR/day of
@@ -109,10 +114,12 @@ the `Economics` sheet, and `figures/cost_curve.svg`.
 
 This repository plus its generated outputs: `deliverables/qa_defect_report.pdf`
 (executive summary with disclaimer, examples, curves, tables, recommendation, the
-cost curve and the control chart), `deliverables/qa_defect_metrics.xlsx` (all
-metrics, per-image scores, the threshold-sweep `Economics` sheet, the `SPC`
-monitoring sheet, and these assumptions), `deliverables/cost_curve.csv`, and
-`deliverables/spc_chart.csv`. 
+cost curve, the control chart and the out-of-control action plan),
+`deliverables/qa_defect_metrics.xlsx` (all metrics, per-image scores, the
+threshold-sweep `Economics` sheet, the `SPC` monitoring sheet, the
+`Recalibration` action-plan sheet, and these assumptions),
+`deliverables/cost_curve.csv`, `deliverables/spc_chart.csv`, and
+`deliverables/recalibration.csv`. 
 
 Recommended next step: a **4-week pilot on real camera data** at one station —
 collect ~2,000 real clean images, re-fit the PCA screen, measure the true TPR/FPR
@@ -163,3 +170,38 @@ above: the cost-optimal threshold's "zero false rejects" was an artifact of the
 should not be quoted without that caveat. Detection delays and false-alarm counts
 here are one seeded, modelled run ([A9]), not measured line performance; the pilot
 should re-establish Phase I limits on real camera data.
+
+## The out-of-control action plan (measured recovery per response)
+
+A control chart without an out-of-control action plan trains people to ignore it.
+`qav/recalibration.py` turns the camera-drift alarm into a costed work instruction
+by measuring all four available responses on fresh calibration parts at every drift
+level, in the same EUR terms as the threshold economics ([A3], [A4], [A8]). In
+control the screen runs at 358 EUR per 1,000 parts; at the +0.02 drift the chart
+alarmed at, doing nothing costs 433 EUR (about 300 EUR/day at [A1]); by +0.05 the
+frozen threshold floods the inspectors (63% of all parts flagged, 1,945 EUR); from
++0.10 on it flags everything (2,955 EUR).
+
+The measured work instruction for the QA lead, in order:
+
+1. **Repair the camera first** (lamp, exposure, lens). It is the only response that
+   restores the in-control operating point exactly — by construction, and at every
+   drift level.
+2. **If the repair must wait, re-fit the screen on ~200 recent verified-clean
+   frames** captured under the drifted camera [A10], then re-set the threshold from
+   the unlabelled stream. Measured: separability returns to ROC-AUC ~0.785 (vs
+   0.804 in control) and ~99% of the drift-induced cost is recovered at +0.05 and
+   beyond, for the price of collecting and verifying the frames.
+3. **Never quietly re-center the threshold to make the chart green.** It is the
+   tempting response — no labels, no downtime, and the p-chart returns to its
+   center line by construction. Measured at +0.10: the re-centered screen catches
+   1.1 of 15 defects (0.4 of 15 at +0.20) at an in-control-looking flag rate — a
+   blind screen behind a green chart, discoverable only by the escape rate weeks
+   later. If the threshold is ever re-centered, the event itself must go on the
+   chart as a process change with fresh Phase I limits.
+
+Honest scope: the drift is a synthetic brightness stand-in (the corruption the
+robustness test showed PCA is most fragile to), the refit window is assumed clean
+and free [A10], and downtime is not costed. Full grid:
+`deliverables/recalibration.csv`, the workbook's `Recalibration` sheet, and
+`figures/recalibration.svg`.
