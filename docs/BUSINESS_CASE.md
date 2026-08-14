@@ -2,7 +2,7 @@
 
 This document translates the study in this repository into the decision it is meant
 to support. Every quantity that is not measured by the code is an **assumption,
-labelled [A1]-[A7]** and kept visible in the arithmetic. The measured inputs come
+labelled [A1]-[A11]** and kept visible in the arithmetic. The measured inputs come
 from synthetic textures, so the honest scope of this case is: *is a pilot on real
 camera data worth funding, and with which method?* — not *what will production
 performance be*.
@@ -40,6 +40,12 @@ ships uninspected.
   is available for detector re-fitting at zero modelled cost. Verification labour,
   recalibration downtime and the risk that the window is contaminated are NOT
   costed. Used only by the out-of-control action plan below.
+- [A11] Escaped defects are **graded by severity** rather than costed at one rate:
+  parts are graded on the measured severity index (displaced intensity) at the fixed
+  cut points **8** and **15**, and an escape costs **10 EUR (minor) / 35 EUR (major,
+  = [A4]) / 140 EUR (critical)**. Cut points and prices are illustrative planning
+  constants; a real line takes both from its customer defect catalogue and its own
+  defect log. Used only by the severity layer below.
 
 Manual baseline: 10% sampling catches at most 10% of the ~60 defective parts
 (~6/day) [A2, A3, A7]. **~54 defective parts escape per day**, ~1,890 EUR/day of
@@ -98,6 +104,38 @@ in re-inspection than it saves in escapes. Lower the escape cost or raise preval
 and the optimum moves toward flagging more — which is exactly the sensitivity a plant
 controller should see before committing. Full curve: `deliverables/cost_curve.csv`,
 the `Economics` sheet, and `figures/cost_curve.svg`.
+
+## What if escapes are not all worth 35 EUR? (severity grading)
+
+[A4] prices every escape identically, which is the one thing a QA lead will never
+accept: catalogues grade defects minor / major / critical. `qav/severity.py` grades
+every defective part on a **measured** severity index (displaced intensity: area x
+contrast, recorded when the part is generated) at the cut points in [A11], prices each
+grade separately, and re-costs **the same threshold grid** the sweep above walks.
+
+Measured on the study set: 43 minor (29%) / 72 major (48%) / 35 critical (23%), with a
+mix-weighted mean escape cost of **52.33 EUR** against the flat 35 EUR [A4]. The
+uncomfortable measurement is the detectability split — the screen ranks *critical*
+parts **worst** (ROC-AUC 0.706 vs 0.819 for major), because the largest-area marks are
+texture-breaks (22 of the 35 critical parts), the class every method here struggles
+with.
+
+Consequences for this case:
+
+- The recommended operating point **does not move** (score >= 0.0217, 0.45% rejected):
+  it is pinned by the zero-false-reject cliff, and re-pricing escapes cannot argue past
+  it at these rates.
+- The **expected bill does** move: **509 EUR/1,000 instead of 367.50**, +39%, of which
+  **322 EUR (63%) is 2.3 critical escapes**. Any ROI arithmetic that uses one average
+  escape cost understates the exposure of a line whose expensive defects are also its
+  least visible ones.
+- The break-even is measured, not asserted: the recommendation only moves once a
+  **critical escape is worth 259 EUR** (7.4x [A4]), at which point the reject rate
+  jumps to 1.83%. That is the number to put in front of the plant controller who
+  believes a customer return costs far more than an average escape.
+
+Full grid: `deliverables/severity.csv`, the `Severity` / `SeverityGrades` sheets and
+`figures/severity.svg`.
 
 ## Stakeholders
 

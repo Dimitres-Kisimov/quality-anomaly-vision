@@ -48,6 +48,8 @@ from pathlib import Path
 
 import numpy as np
 
+from qav.palette import GRID, INK, INK_MUTED, LAMP, SIGNAL, STEEL, SURFACE
+
 # --- Illustrative constants (NOT guarantees); see module docstring and BUSINESS_CASE.md ---
 DEFECT_PREVALENCE = 0.015  # [A3] share of parts that are truly defective
 COST_ESCAPED_DEFECT_EUR = 35.0  # [A4] downstream cost of one defect that ships (scrap/rework/complaint)
@@ -127,20 +129,33 @@ def _point(threshold: float, tpr: float, fpr: float, model: CostModel) -> Thresh
     )
 
 
+def sweep_grid(scores: np.ndarray) -> np.ndarray:
+    """The shared threshold grid, ordered flag-nothing -> flag-everything.
+
+    Thresholds sit at the midpoints between consecutive distinct scores, plus
+    one padded point above the maximum (flag nothing) and one below the minimum
+    (flag everything) -- so the sweep spans the whole reject-rate range and
+    every threshold sits strictly between two observed scores. A part is
+    flagged when ``score >= threshold``.
+
+    Exposed so every layer that costs an operating point (the flat sweep here,
+    the severity-weighted sweep in :mod:`qav.severity`) walks the *same* grid
+    and their optima are directly comparable.
+    """
+    scores = np.asarray(scores, dtype=np.float64)
+    uniq = np.unique(scores)
+    gap = max((float(uniq[-1]) - float(uniq[0])) * 1e-3, 1e-9)
+    midpoints = (uniq[:-1] + uniq[1:]) / 2.0
+    return np.concatenate([[uniq[-1] + gap], midpoints[::-1], [uniq[0] - gap]])
+
+
 def sweep_thresholds(
     labels: np.ndarray,
     scores: np.ndarray,
     model: CostModel | None = None,
     method_name: str = "detector",
 ) -> CostSweep:
-    """Sweep the score threshold and cost out every operating point.
-
-    Thresholds are placed at the midpoints between consecutive distinct scores,
-    plus one padded point below the minimum (flag everything) and one above the
-    maximum (flag nothing) -- so the sweep spans the whole reject-rate range and
-    every threshold sits strictly between two observed scores. A part is flagged
-    when ``score >= threshold``.
-    """
+    """Sweep the score threshold (:func:`sweep_grid`) and cost out every point."""
     model = model or CostModel()
     labels = np.asarray(labels).astype(bool)
     scores = np.asarray(scores, dtype=np.float64)
@@ -149,10 +164,7 @@ def sweep_thresholds(
     if n_pos == 0 or n_neg == 0:
         raise ValueError("sweep_thresholds needs at least one defective and one clean unit")
 
-    uniq = np.unique(scores)
-    gap = max((float(uniq[-1]) - float(uniq[0])) * 1e-3, 1e-9)
-    midpoints = (uniq[:-1] + uniq[1:]) / 2.0
-    thresholds = np.concatenate([[uniq[-1] + gap], midpoints[::-1], [uniq[0] - gap]])
+    thresholds = sweep_grid(scores)
 
     points: list[ThresholdPoint] = []
     for t in thresholds:
@@ -269,12 +281,15 @@ def write_cost_curve_csv(sweep: CostSweep, path: str | Path) -> int:
 
 _SVG_W, _SVG_H = 780, 470
 _PLOT = (86.0, 55.0, 560.0, 372.0)  # x0, y0, x1, y1 of the plot rectangle
-_COL_TOTAL = "#b3261e"
-_COL_ESCAPE = "#2a78d6"
-_COL_SCRAP = "#008300"
-_COL_AXIS = "#52514e"
-_COL_GRID = "#d9d8d4"
-_COL_TEXT = "#0b0b0b"
+# Plate palette (see qav/palette.py): the total cost you act on wears the signal
+# red, escaped defects the inspection-lamp amber, the good parts you scrap the
+# machined steel. Dash patterns carry the same identity, so never hue alone.
+_COL_TOTAL = SIGNAL
+_COL_ESCAPE = LAMP
+_COL_SCRAP = STEEL
+_COL_AXIS = INK_MUTED
+_COL_GRID = GRID
+_COL_TEXT = INK
 
 
 def _nice_ceiling(value: float) -> float:
@@ -319,7 +334,7 @@ def cost_curve_svg(sweep: CostSweep) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SVG_W}" height="{_SVG_H}" '
         f'viewBox="0 0 {_SVG_W} {_SVG_H}" font-family="Segoe UI, Helvetica, Arial, sans-serif">'
     )
-    parts.append(f'<rect x="0" y="0" width="{_SVG_W}" height="{_SVG_H}" fill="white"/>')
+    parts.append(f'<rect x="0" y="0" width="{_SVG_W}" height="{_SVG_H}" fill="{SURFACE}"/>')
     parts.append(
         f'<text x="{_SVG_W / 2:.0f}" y="26" text-anchor="middle" font-size="16" '
         f'font-weight="bold" fill="{_COL_TEXT}">Inspection-threshold economics: scrap vs escape'
@@ -417,7 +432,7 @@ def cost_curve_svg(sweep: CostSweep) -> str:
     ]
     parts.append(
         f'<rect x="{lx - 8:.2f}" y="{ly - 4:.2f}" width="168" height="56" rx="4" '
-        f'fill="white" fill-opacity="0.85" stroke="{_COL_GRID}" stroke-width="1"/>'
+        f'fill="{SURFACE}" fill-opacity="0.9" stroke="{_COL_GRID}" stroke-width="1"/>'
     )
     for i, (color, text) in enumerate(legend):
         yy = ly + 12 + i * 16

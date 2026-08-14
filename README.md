@@ -177,6 +177,61 @@ false-alarm rate is essentially 0%. Change the three constants (one edit in
 `qav/economics.py`) and the recommended threshold moves; surfacing that sensitivity is
 the point.
 
+## Not every escape costs the same: severity-graded economics
+
+The section above prices **every** escaped defect at one rate — 35 EUR [A4]. No QA
+department on earth works that way: defect catalogues grade marks *minor / major /
+critical*, which is exactly the classification AQL sampling plans are written around.
+`qav/severity.py` puts that ledger under the same threshold sweep.
+
+Every defective part carries a **measured severity index**: the total absolute
+intensity its injection displaced (`sum |defective − clean|`, in intensity × pixels —
+area and contrast together, recorded at generation time, no detector involved). Parts
+are graded at the fixed cut points **8** and **15** on that index [A11] — chosen once
+from the index distribution alone, before any cost was computed; a real line takes
+them from its customer defect catalogue. Each grade is then priced separately
+[A11]: **minor 10 EUR, major 35 EUR (anchored to [A4], so the flat model is a special
+case of this one), critical 140 EUR**.
+
+| Grade | Parts | Share | Defect kinds | ROC-AUC vs clean | Escape cost [A11] |
+|---|---|---|---|---|---|
+| minor (index < 8) | 43 | 29% | 16 scratch / 19 blob / 8 texture-break | 0.746 | 10 EUR |
+| major (8–15) | 72 | 48% | 26 / 26 / 20 | **0.819** | 35 EUR |
+| critical (≥ 15) | 35 | 23% | 8 / 5 / **22** | **0.706** | 140 EUR |
+
+![Severity-graded inspection economics](figures/severity.svg)
+
+Three findings, in the order they mattered:
+
+- **The expensive grade is the one the screen sees worst.** Critical parts score the
+  *lowest* AUC (0.706 vs 0.819 for major) because the biggest-area marks are
+  texture-breaks — 22 of the 35 critical parts — and texture-breaks are precisely the
+  class every method here struggles with. The severity index is a property of the mark,
+  not of its visibility, and on this generator those two things point in opposite
+  directions.
+- **Grading changes the bill long before it changes the decision.** At the labelled
+  rates the graded sweep picks **the same operating point** as the flat one (score
+  ≥ 0.0217, 0.45% of parts pulled) — the optimum is pinned by the zero-false-reject
+  cliff, and no re-pricing of escapes can move it past that. What changes is what the
+  line should expect to pay: **509 EUR per 1,000 parts instead of 368 EUR (+39%)**, of
+  which **322 EUR (63%) comes from the 2.3 critical escapes** — 22% of the escaped
+  parts. A "level vs shape" check confirms the rise is the price of severity, not a
+  mis-shaped escape mix: re-pricing the same grade ratios so their mean equals 35 EUR
+  gives 340 EUR, 7% *below* the flat model.
+- **The break-even is measured, not asserted.** The code bisects for the critical-escape
+  price at which the recommendation actually moves: **259 EUR** (7.4× the flat rate),
+  where the reject rate jumps from 0.45% to **1.83%**. Below that price, severity
+  grading is a re-pricing exercise; above it, it is an operating-point decision. That
+  number is the one to take to a plant controller who thinks a customer return costs
+  far more than an average escape.
+
+Honest scope: the cut points and the three prices are **illustrative labelled
+constants [A11]**, the grade **mix** is this generator's mix (a real line's comes from
+its own defect log), and the index is a synthetic-image proxy for "how much material
+the mark disturbs" — not a customer-severity model. What is measured: the index itself,
+every per-grade detection rate, and every AUC. Full grid: `deliverables/severity.csv`
+and the workbook's `Severity` / `SeverityGrades` sheets.
+
 ## Is the line still in control? A p-chart on the screening output
 
 Everything above answers a *static* question on one test set. A running station is a
@@ -293,25 +348,36 @@ workbook's `Recalibration` sheet.
 
 ```
 pip install -r requirements.txt
-python -m qav --deliverables     # full study + economics + robustness + SPC + OCAP: ~2 minutes on CPU
-python -m pytest                 # 59 tests, ~30 s
+python -m qav --deliverables     # full study + economics + severity + robustness + SPC + OCAP: ~2 minutes on CPU
+python -m pytest                 # 72 tests, ~32 s
 python -m ruff check .
 ```
 
-`--deliverables` writes `deliverables/qa_defect_report.pdf` (9-page executive report
+`--deliverables` writes `deliverables/qa_defect_report.pdf` (10-page executive report
 with disclaimer, gallery, curves, tables, recommendation, the cost curve, the
-robustness stress-test, the control chart and the out-of-control action plan),
-`deliverables/qa_defect_metrics.xlsx`
-(Metrics / PerDefectType / Economics / Robustness / SPC / Recalibration /
-Assumptions / PerImageScores — PerImageScores has every raw score so the ROC curves
-can be re-derived independently), `deliverables/cost_curve.csv`,
-`deliverables/robustness.csv`, `deliverables/spc_chart.csv`,
-`deliverables/recalibration.csv` plus the hand-drawn `figures/cost_curve.svg`,
-`figures/spc_chart.svg` and `figures/recalibration.svg`, and the four PNGs in
+severity-graded economics, the robustness stress-test, the control chart and the
+out-of-control action plan), `deliverables/qa_defect_metrics.xlsx`
+(Metrics / PerDefectType / Economics / Severity / SeverityGrades / Robustness / SPC /
+Recalibration / Assumptions / PerImageScores — PerImageScores has every raw score so
+the ROC curves can be re-derived independently), `deliverables/cost_curve.csv`,
+`deliverables/severity.csv`, `deliverables/robustness.csv`,
+`deliverables/spc_chart.csv`, `deliverables/recalibration.csv` plus the hand-drawn
+`figures/cost_curve.svg`, `figures/severity.svg`, `figures/spc_chart.svg` and
+`figures/recalibration.svg`, and the four PNGs in
 `figures/`. Torch is only needed for the autoencoder; without it, the classical
-baselines, the economics, robustness, SPC and recalibration layers and their tests
-still run (`pytest.importorskip` handles the skip). The business framing lives in
+baselines, the economics, severity, robustness, SPC and recalibration layers and their
+tests still run (`pytest.importorskip` handles the skip). The business framing lives in
 [docs/BUSINESS_CASE.md](docs/BUSINESS_CASE.md).
+
+Every plate — the PDF pages, the hand-drawn SVGs and the README PNGs — draws its
+colors from one place, `qav/palette.py`: a production line under inspection lights.
+Machined-metal neutrals carry the page, material tones (steel / patina / copper) carry
+identity, inspection-lamp amber carries caution, signal red carries the thing you act
+on. The palette was checked with the data-viz palette validator against this surface:
+the method trio and the status/policy quartet pass every check on all pairs, and the
+severity ramp passes the ordinal checks (monotone lightness, 29° hue spread). Hue is
+never the only channel — every series also carries a dash pattern, a marker shape or a
+direct label.
 
 ## Limitations, stated plainly
 
@@ -332,6 +398,12 @@ still run (`pytest.importorskip` handles the skip). The business framing lives i
   real production autocorrelates, drifts and batches in ways that change both the
   false-alarm rate and the detection delay. One seeded run of the chart, not an
   average-run-length study.
+- **Defect severity is graded on a synthetic proxy, and priced by assumption.** The
+  severity index measures displaced intensity in *my* generated images; the cut points
+  (8 / 15) and the three escape prices (10 / 35 / 140 EUR) are labelled illustrative
+  constants [A11], and the grade mix is the generator's, not a plant's. The grading
+  arithmetic is exact and the per-grade detection rates are measured; the *money* is a
+  planning assumption, and the break-even (259 EUR) is the honest way to read it.
 - **The action plan's recovery numbers are responses to a synthetic drift.** One
   drift mode (a global brightness shift — deliberately the one PCA is most fragile
   to). The refit policy assumes 200 verified-clean recent frames arrive free and

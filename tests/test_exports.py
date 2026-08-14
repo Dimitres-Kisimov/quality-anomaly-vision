@@ -51,8 +51,8 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
 
     wb = openpyxl.load_workbook(xlsx)
     assert set(wb.sheetnames) == {
-        "Metrics", "PerDefectType", "Economics", "Robustness", "SPC",
-        "Recalibration", "Assumptions", "PerImageScores"
+        "Metrics", "PerDefectType", "Economics", "Severity", "SeverityGrades",
+        "Robustness", "SPC", "Recalibration", "Assumptions", "PerImageScores"
     }
     metrics = wb["Metrics"]
     assert metrics.max_row == 4, "header + one row per method"
@@ -63,6 +63,24 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     # Exactly one operating point is flagged as recommended.
     flags = [econ.cell(row=r, column=13).value for r in range(2, econ.max_row + 1)]
     assert sum(int(v) for v in flags) == 1
+
+    # Severity sheets: the graded sweep walks the same grid as the Economics
+    # sheet, and each sheet flags exactly one recommended point per cost model.
+    sev = wb["Severity"]
+    assert sev["A1"].value == "threshold" and sev.max_row == econ.max_row
+    header = [c.value for c in sev[1]]
+    for col, flags_expected in (("is_recommended_weighted", 1), ("is_recommended_flat", 1)):
+        idx = header.index(col) + 1
+        got = [sev.cell(row=r, column=idx).value for r in range(2, sev.max_row + 1)]
+        assert sum(int(v) for v in got) == flags_expected, col
+    grades = wb["SeverityGrades"]
+    assert grades["A1"].value == "grade" and grades.max_row == 4, "header + one row per grade"
+    assert [grades.cell(row=r, column=1).value for r in range(2, 5)] == [
+        "minor", "major", "critical"
+    ]
+    share_col = [c.value for c in grades[1]].index("share_of_defects") + 1
+    shares = [grades.cell(row=r, column=share_col).value for r in range(2, 5)]
+    assert sum(shares) == pytest.approx(1.0, abs=1e-5)  # sheet values are 6-dp rounded
 
     # Robustness sheet: header, one baseline row per method, then the sweep grid.
     rob = wb["Robustness"]
@@ -96,6 +114,8 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     # README references.
     csv_file = out / "cost_curve.csv"
     svg_file = figs / "cost_curve.svg"
+    severity_csv_file = out / "severity.csv"
+    severity_svg_file = figs / "severity.svg"
     robustness_csv = out / "robustness.csv"
     spc_csv_file = out / "spc_chart.csv"
     spc_svg_file = figs / "spc_chart.svg"
@@ -103,6 +123,8 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     recal_svg_file = figs / "recalibration.svg"
     assert csv_file.exists() and sizes[str(csv_file)] > 0
     assert svg_file.exists() and sizes[str(svg_file)] > 0
+    assert severity_csv_file.exists() and sizes[str(severity_csv_file)] > 0
+    assert severity_svg_file.exists() and sizes[str(severity_svg_file)] > 0
     assert robustness_csv.exists() and sizes[str(robustness_csv)] > 0
     assert spc_csv_file.exists() and sizes[str(spc_csv_file)] > 0
     assert spc_svg_file.exists() and sizes[str(spc_svg_file)] > 0
@@ -110,6 +132,10 @@ def test_deliverables_and_figures_are_written_and_nonempty(tmp_path):
     assert recal_svg_file.exists() and sizes[str(recal_svg_file)] > 0
     assert csv_file.read_text(encoding="utf-8").startswith("threshold,reject_rate,")
     assert svg_file.read_text(encoding="utf-8").startswith("<svg")
+    assert severity_csv_file.read_text(encoding="utf-8").startswith(
+        "threshold,reject_rate,fpr,recall,recall_minor,"
+    )
+    assert severity_svg_file.read_text(encoding="utf-8").startswith("<svg")
     assert robustness_csv.read_text(encoding="utf-8").startswith("method,perturbation,severity,")
     assert spc_csv_file.read_text(encoding="utf-8").startswith("scenario,subgroup,phase,")
     assert spc_svg_file.read_text(encoding="utf-8").startswith("<svg")

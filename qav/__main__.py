@@ -77,6 +77,14 @@ def main(argv: list[str] | None = None) -> int:
     for line in plain_language_read(sweep).splitlines():
         print(f"  {line}")
 
+    from qav.severity import plain_language_read as severity_read
+    from qav.severity import severity_for_report
+
+    sev = severity_for_report(report, sweep=sweep)
+    print("[INFO] defect severity grading (graded escape ledger on the same sweep):")
+    for line in severity_read(sev).splitlines():
+        print(f"  {line}")
+
     from qav.robustness import plain_language_read as robustness_read
     from qav.robustness import robustness_for_report
 

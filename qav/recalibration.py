@@ -66,6 +66,7 @@ from qav.baselines import LocalStatsDetector, PCAReconstruction
 from qav.data import DataConfig, make_dataset
 from qav.economics import CostModel, _nice_ceiling, _point
 from qav.evaluate import roc_auc
+from qav.palette import GRID, INK, INK_MUTED, LAMP, PATINA, SIGNAL, STEEL, SURFACE
 from qav.robustness import perturb
 from qav.spc import SPCConfig, calibration_dataset, measured_flag_rates
 
@@ -492,15 +493,15 @@ def write_recalibration_csv(study: RecalStudy, path: str | Path) -> int:
 
 _SVG_W, _SVG_H = 780, 470
 _PLOT = (86.0, 72.0, 610.0, 380.0)  # x0, y0, x1, y1 of the plot rectangle
-_COL_AXIS = "#52514e"
-_COL_GRID = "#d9d8d4"
-_COL_TEXT = "#0b0b0b"
+_COL_AXIS = INK_MUTED
+_COL_GRID = GRID
+_COL_TEXT = INK
 # One fixed hue + dash per policy (dash patterns carry meaning, never hue alone).
 _POLICY_STYLE = {
-    "no_action": ("#b3261e", "none", 2.6),
-    "rate_recenter": ("#eda100", "6 3", 2.0),
-    "refit_recent": ("#008300", "8 3 2 3", 2.0),
-    "fix_camera": ("#2a78d6", "2 3", 2.0),
+    "no_action": (SIGNAL, "none", 2.6),
+    "rate_recenter": (LAMP, "6 3", 2.0),
+    "refit_recent": (PATINA, "8 3 2 3", 2.0),
+    "fix_camera": (STEEL, "2 3", 2.0),
 }
 
 
@@ -526,7 +527,7 @@ def recalibration_svg(study: RecalStudy) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SVG_W}" height="{_SVG_H}" '
         f'viewBox="0 0 {_SVG_W} {_SVG_H}" font-family="Segoe UI, Helvetica, Arial, sans-serif">'
     )
-    parts.append(f'<rect x="0" y="0" width="{_SVG_W}" height="{_SVG_H}" fill="white"/>')
+    parts.append(f'<rect x="0" y="0" width="{_SVG_W}" height="{_SVG_H}" fill="{SURFACE}"/>')
     parts.append(
         f'<text x="{_SVG_W / 2:.0f}" y="26" text-anchor="middle" font-size="16" '
         f'font-weight="bold" fill="{_COL_TEXT}">The alarm fired -- now what? '
@@ -607,7 +608,7 @@ def recalibration_svg(study: RecalStudy) -> str:
         for d, c in pts[1:]:
             parts.append(
                 f'<circle cx="{px(d):.2f}" cy="{py(c):.2f}" r="3" fill="{color}" '
-                f'stroke="white" stroke-width="1"/>'
+                f'stroke="{SURFACE}" stroke-width="1"/>'
             )
 
     # end-of-line labels, staggered deterministically so they never collide

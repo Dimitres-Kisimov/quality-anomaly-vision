@@ -10,6 +10,7 @@ from qav.data import (
     _base_texture,
     inject_defect,
     make_dataset,
+    severity_index,
 )
 
 TINY = DataConfig(n_train=8, n_test_clean=6, n_test_defective=9, seed=11)
@@ -64,6 +65,36 @@ def test_dataset_masks_consistent_with_labels():
         else:
             assert d.test_masks[i].sum() >= 10, "defect masks should cover a visible region"
             assert d.test_types[i] in DEFECT_KINDS
+
+
+def test_severity_index_measures_displaced_intensity():
+    rng = np.random.default_rng(5)
+    clean = _base_texture(rng, 64)
+    assert severity_index(clean, clean) == 0.0
+    # A mark twice as strong displaces twice as much intensity, and a mark over
+    # twice the area displaces twice as much too -- area and contrast together.
+    faint = clean.copy()
+    faint[20:24, 20:24] = np.clip(faint[20:24, 20:24] + 0.1, 0.0, 1.0)
+    harsh = clean.copy()
+    harsh[20:24, 20:24] = np.clip(harsh[20:24, 20:24] + 0.2, 0.0, 1.0)
+    wide = clean.copy()
+    wide[20:28, 20:24] = np.clip(wide[20:28, 20:24] + 0.1, 0.0, 1.0)
+    assert severity_index(clean, harsh) == pytest.approx(2 * severity_index(clean, faint), rel=1e-6)
+    assert severity_index(clean, wide) == pytest.approx(2 * severity_index(clean, faint), rel=1e-6)
+
+
+def test_dataset_records_severity_for_defective_parts_only():
+    d = make_dataset(TINY)
+    assert d.test_severity.shape == (15,) and d.test_severity.dtype == np.float64
+    defective = d.test_labels.astype(bool)
+    assert np.all(d.test_severity[~defective] == 0.0)
+    assert np.all(d.test_severity[defective] > 0.0)
+    again = make_dataset(TINY)
+    assert np.array_equal(d.test_severity, again.test_severity)
+    # Every masked pixel moved by more than MASK_DELTA_THRESHOLD, and the index
+    # sums the whole image, so it must exceed area x that threshold.
+    for i in np.nonzero(defective)[0]:
+        assert d.test_severity[i] > d.test_masks[i].sum() * MASK_DELTA_THRESHOLD
 
 
 def test_inject_defect_rejects_unknown_kind():

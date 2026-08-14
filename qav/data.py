@@ -13,8 +13,16 @@ faint weave). Three defect kinds are injected on top of clean textures:
 
 Every defective image carries a ground-truth boolean mask of the pixels that
 actually changed, so localization (not just image-level scoring) can be
-evaluated. All randomness flows through one ``numpy.random.Generator`` seeded
-from ``DataConfig.seed``: the same config always produces bit-identical arrays.
+evaluated. Each defective image also carries a **severity index**: the total
+absolute intensity the injection displaced (``sum |defective - clean|`` over
+the image, in intensity x pixels). It is a measured property of the injection
+-- area and contrast together, no model involved -- and it is what
+``qav.severity`` grades parts by. Clean images have severity 0.
+
+All randomness flows through one ``numpy.random.Generator`` seeded from
+``DataConfig.seed``: the same config always produces bit-identical arrays.
+Recording the severity index reads the arrays that were generated anyway and
+draws no randomness, so every previously measured number is unchanged.
 """
 
 from __future__ import annotations
@@ -47,7 +55,7 @@ class SurfaceDataset:
     """Arrays for one generated study.
 
     ``test_types[i]`` is ``"clean"`` or one of ``DEFECT_KINDS``; ``test_masks``
-    is all-False for clean images.
+    is all-False and ``test_severity`` 0.0 for clean images.
     """
 
     train: np.ndarray  # (n_train, S, S) float32 in [0, 1], all clean
@@ -55,6 +63,7 @@ class SurfaceDataset:
     test_labels: np.ndarray  # (n_test,) int, 0 = clean, 1 = defective
     test_types: list[str]
     test_masks: np.ndarray  # (n_test, S, S) bool
+    test_severity: np.ndarray  # (n_test,) float64: displaced intensity, 0.0 when clean
     config: DataConfig
 
 
@@ -168,6 +177,19 @@ def inject_defect(
     return _INJECTORS[kind](image, rng)
 
 
+def severity_index(clean: np.ndarray, defective: np.ndarray) -> float:
+    """Total absolute intensity the injection displaced (intensity x pixels).
+
+    One physical number per defective part -- big-and-faint and small-and-harsh
+    marks can land on the same value, which is exactly the point: it is *how
+    much material the mark disturbs*, not how easy the mark is to see. It is
+    measured from the two arrays only (no detector, no threshold), so it is
+    available as ground truth for grading in :mod:`qav.severity`.
+    """
+    return float(np.abs(np.asarray(defective, dtype=np.float64)
+                        - np.asarray(clean, dtype=np.float64)).sum())
+
+
 def make_dataset(config: DataConfig | None = None) -> SurfaceDataset:
     """Generate the full study dataset deterministically from ``config.seed``.
 
@@ -189,6 +211,7 @@ def make_dataset(config: DataConfig | None = None) -> SurfaceDataset:
     defective_images: list[np.ndarray] = []
     defective_masks: list[np.ndarray] = []
     defective_types: list[str] = []
+    defective_severity: list[float] = []
     for kind, count in zip(DEFECT_KINDS, counts, strict=True):
         for _ in range(count):
             base = _base_texture(rng, size)
@@ -196,6 +219,7 @@ def make_dataset(config: DataConfig | None = None) -> SurfaceDataset:
             defective_images.append(img)
             defective_masks.append(mask)
             defective_types.append(kind)
+            defective_severity.append(severity_index(base, img))
 
     n_def = len(defective_images)
     test_images = np.concatenate([test_clean, np.stack(defective_images)]) if n_def else test_clean
@@ -209,11 +233,15 @@ def make_dataset(config: DataConfig | None = None) -> SurfaceDataset:
         ]
     )
     test_types = ["clean"] * cfg.n_test_clean + defective_types
+    test_severity = np.concatenate(
+        [np.zeros(cfg.n_test_clean, dtype=np.float64), np.asarray(defective_severity, dtype=np.float64)]
+    )
     return SurfaceDataset(
         train=train,
         test_images=test_images,
         test_labels=test_labels,
         test_types=test_types,
         test_masks=test_masks,
+        test_severity=test_severity,
         config=cfg,
     )

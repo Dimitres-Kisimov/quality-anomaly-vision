@@ -61,6 +61,7 @@ import numpy as np
 
 from qav.data import DataConfig, SurfaceDataset, make_dataset
 from qav.economics import DEFECT_PREVALENCE, _nice_ceiling
+from qav.palette import GRID, INK, INK_MUTED, LAMP, SIGNAL, STEEL, SURFACE
 from qav.robustness import perturb
 
 # --- Stream and chart defaults (labelled; see docstring and BUSINESS_CASE.md) ---
@@ -658,12 +659,16 @@ def write_spc_csv(study: SPCStudy, path: str | Path) -> int:
 
 _SVG_W, _SVG_H = 820, 700
 _PANELS = ((70.0, 108.0, 756.0, 330.0), (70.0, 402.0, 756.0, 624.0))  # x0, y0, x1, y1
-_COL_SERIES = "#2a78d6"
-_COL_STATUS = "#b3261e"
-_COL_CHANGE = "#eda100"
-_COL_AXIS = "#52514e"
-_COL_GRID = "#d9d8d4"
-_COL_TEXT = "#0b0b0b"
+# Plate palette (see qav/palette.py): the monitored stream wears the machined
+# steel of the part it watches, control limits and rule violations the signal
+# red, the change point the inspection-lamp amber. Dash patterns and marker
+# shapes repeat every distinction, so hue never carries meaning alone.
+_COL_SERIES = STEEL
+_COL_STATUS = SIGNAL
+_COL_CHANGE = LAMP
+_COL_AXIS = INK_MUTED
+_COL_GRID = GRID
+_COL_TEXT = INK
 
 
 def _panel(
@@ -773,11 +778,11 @@ def _panel(
         if hits.alarm:
             parts.append(
                 f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="4" fill="{_COL_STATUS}" '
-                f'stroke="white" stroke-width="1.4"/>'
+                f'stroke="{SURFACE}" stroke-width="1.4"/>'
             )
         else:
             parts.append(
-                f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="2.4" fill="white" '
+                f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="2.4" fill="{SURFACE}" '
                 f'stroke="{_COL_SERIES}" stroke-width="1.2"/>'
             )
     # first-alarm annotation, pinned to a clear band with a dotted leader down
@@ -805,7 +810,7 @@ def spc_chart_svg(study: SPCStudy) -> str:
     """Both scenarios as p-chart panels on a shared scale, drawn by hand.
 
     Deterministic: no timestamps, no random ids, coordinates rounded to two
-    decimals. Alarm points are larger, filled and white-ringed (redundant to
+    decimals. Alarm points are larger, filled and surface-ringed (redundant to
     hue); control limits are dashed; the change point carries a text label.
     """
     raw_max = (
@@ -823,7 +828,7 @@ def spc_chart_svg(study: SPCStudy) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SVG_W}" height="{_SVG_H}" '
         f'viewBox="0 0 {_SVG_W} {_SVG_H}" font-family="Segoe UI, Helvetica, Arial, sans-serif">'
     )
-    parts.append(f'<rect x="0" y="0" width="{_SVG_W}" height="{_SVG_H}" fill="white"/>')
+    parts.append(f'<rect x="0" y="0" width="{_SVG_W}" height="{_SVG_H}" fill="{SURFACE}"/>')
     parts.append(
         f'<text x="{_SVG_W / 2:.0f}" y="26" text-anchor="middle" font-size="16" '
         f'font-weight="bold" fill="{_COL_TEXT}">Is the line still in control? '
@@ -854,7 +859,7 @@ def spc_chart_svg(study: SPCStudy) -> str:
         else:
             parts.append(
                 f'<circle cx="{lx + 10:.1f}" cy="62" r="4" fill="{color}" '
-                f'stroke="white" stroke-width="1.2"/>'
+                f'stroke="{SURFACE}" stroke-width="1.2"/>'
             )
         parts.append(
             f'<text x="{lx + 26:.1f}" y="65.5" font-size="9" fill="{_COL_TEXT}">{text}</text>'
